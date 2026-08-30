@@ -6,18 +6,18 @@ tree green and the public API usable.
 
 ## Phase 1 — Formula grammar
 
-- [ ] Tokenizer covering numbers, strings, booleans, operators, references, ranges and error literals
-- [ ] Pratt parser producing a typed AST with correct precedence and associativity
-- [ ] Parse errors carry source offsets
-- [ ] Table-driven parser tests
+- [x] Tokenizer covering numbers, strings, booleans, operators, references, ranges and error literals
+- [x] Pratt parser producing a typed AST with correct precedence and associativity
+- [x] Parse errors carry source offsets
+- [x] Table-driven parser tests
 
 ## Phase 2 — Reference model
 
-- [ ] A1 notation encode/decode, including multi-letter columns
-- [ ] Absolute, relative and mixed anchors (`$A$1`, `A$1`, `$A1`)
-- [ ] Ranges, normalisation and iteration
-- [ ] Reference translation for fill-down / fill-across
-- [ ] Cell store with sparse addressing
+- [x] A1 notation encode/decode, including multi-letter columns
+- [x] Absolute, relative and mixed anchors (`$A$1`, `A$1`, `$A1`)
+- [x] Ranges, normalisation and iteration
+- [x] Reference translation for fill-down / fill-across
+- [x] Cell store with sparse addressing
 
 ## Phase 3 — Dependency graph and recalculation
 
