@@ -97,6 +97,22 @@ describe("tokenize", () => {
     expect(kinds("=$A$1")).toEqual(["word:$A$1"]);
   });
 
+  it("keeps a dotted function name in one word token", () => {
+    expect(kinds("=STDEV.P(A1:A2)")[0]).toBe("word:STDEV.P");
+    expect(kinds("=ERROR.TYPE(A1)")[0]).toBe("word:ERROR.TYPE");
+  });
+
+  it("still lexes a leading dot as the start of a number", () => {
+    expect(kinds("=SUM(1,.5)")).toEqual([
+      "word:SUM",
+      "lparen:(",
+      "number:1",
+      "comma:,",
+      "number:.5",
+      "rparen:)",
+    ]);
+  });
+
   it("treats both comma and semicolon as argument separators", () => {
     expect(kinds("=F(1,2)")).toEqual([
       "word:F",

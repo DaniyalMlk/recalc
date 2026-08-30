@@ -67,8 +67,12 @@ function isWordStart(ch: string): boolean {
   return (ch >= "A" && ch <= "Z") || (ch >= "a" && ch <= "z") || ch === "_" || ch === "$";
 }
 
+/**
+ * A dot may continue a word but never start one, so `STDEV.P` and `ERROR.TYPE`
+ * lex as single words while `.5` still reaches the number branch.
+ */
 function isWordPart(ch: string): boolean {
-  return isWordStart(ch) || isDigit(ch);
+  return isWordStart(ch) || isDigit(ch) || ch === ".";
 }
 
 /**

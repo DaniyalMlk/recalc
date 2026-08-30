@@ -15,9 +15,32 @@ formula depends on, and recalculates only what an edit actually invalidated.
 
 ## Status
 
-Phases 1–2 of [ROADMAP.md](ROADMAP.md) are complete: the formula grammar and the
-reference model. Later phases add the dependency graph, the evaluator, a
-financial function pack and a web interface.
+Phases 1–4 of [ROADMAP.md](ROADMAP.md) are complete: the formula grammar, the
+reference model, the dependency graph, and the evaluator with its function
+library. Later phases add a financial function pack, a web interface and CSV
+interchange.
+
+```ts
+import { Workbook } from "recalc";
+
+const book = new Workbook();
+book.setCells({
+  B1: 1200,          // units
+  B2: 24.5,          // price
+  B3: 15.25,         // unit cost
+  B4: 6000,          // fixed costs
+  B6: "=B1*B2",
+  B8: "=B6-B1*B3",
+  B9: "=B8-B4",
+  B12: '=IF(B9>0,"profitable","loss-making")',
+});
+
+book.getValue("B9");        // 5100
+book.getValue("B12");       // "profitable"
+book.setCell("B1", 500);    // four dependent cells recompute, nothing else
+book.getValue("B12");       // "loss-making"
+book.precedentsOf("B9");    // ["B8", "B4"]
+```
 
 ## Install and run
 
