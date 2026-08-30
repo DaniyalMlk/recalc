@@ -29,11 +29,11 @@ tree green and the public API usable.
 
 ## Phase 4 — Evaluator and core functions
 
-- [ ] Value model with numbers, strings, booleans, blanks and typed errors
-- [ ] Coercion rules and error propagation matching spreadsheet semantics
-- [ ] Arithmetic, comparison, text-join and unary/postfix operators
-- [ ] Math, statistical, logical, text and lookup function packs
-- [ ] Argument arity and type validation with per-function signatures
+- [x] Value model with numbers, strings, booleans, blanks and typed errors
+- [x] Coercion rules and error propagation matching spreadsheet semantics
+- [x] Arithmetic, comparison, text-join and unary/postfix operators
+- [x] Math, statistical, logical, text and lookup function packs
+- [x] Argument arity and type validation with per-function signatures
 
 ## Phase 5 — Financial function pack
 
