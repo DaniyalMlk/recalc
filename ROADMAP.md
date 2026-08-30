@@ -21,11 +21,11 @@ tree green and the public API usable.
 
 ## Phase 3 — Dependency graph and recalculation
 
-- [ ] Precedent extraction from the AST, including whole-range precedents
-- [ ] Dependency graph with reverse edges for dependents
-- [ ] Cycle detection reporting the participating cells
-- [ ] Topological ordering of the dirty set only
-- [ ] Incremental recalculation on cell edit
+- [x] Precedent extraction from the AST, including whole-range precedents
+- [x] Dependency graph with reverse edges for dependents
+- [x] Cycle detection reporting the participating cells
+- [x] Topological ordering of the dirty set only
+- [x] Incremental recalculation on cell edit
 
 ## Phase 4 — Evaluator and core functions
 
