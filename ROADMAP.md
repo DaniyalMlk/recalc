@@ -37,10 +37,11 @@ tree green and the public API usable.
 
 ## Phase 5 — Financial function pack
 
-- [ ] Time-value-of-money core: `PV`, `FV`, `PMT`, `NPER`, `RATE`
-- [ ] Discounted cash flow: `NPV`, `IRR`, `XNPV`, `XIRR`
-- [ ] Robust root-finding with bracketing fallback for `IRR` / `RATE`
-- [ ] Numerics validated against closed-form results and published worked examples
+- [x] Time-value-of-money core: `PV`, `FV`, `PMT`, `NPER`, `RATE`
+- [x] Discounted cash flow: `NPV`, `IRR`, `XNPV`, `XIRR`
+- [x] Robust root-finding with bracketing fallback for `IRR` / `RATE`
+- [x] Numerics validated against closed-form results and published worked examples
+- [x] Interactive shell for entering and inspecting a sheet
 
 ## Phase 6 — Web interface
 
