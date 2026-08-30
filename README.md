@@ -37,7 +37,7 @@ book.setCells({
 
 book.getValue("B9");        // 5100
 book.getValue("B12");       // "profitable"
-book.setCell("B1", 500);    // five dependent cells recompute, nothing else
+book.setCell("B1", 500);    // four dependent cells recompute, nothing else
 book.getValue("B12");       // "loss-making"
 book.precedentsOf("B9");    // ["B8", "B4"]
 ```
