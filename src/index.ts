@@ -1,5 +1,6 @@
 export * from "./engine/ast.js";
 export * from "./engine/errors.js";
+export * from "./engine/evaluator.js";
 export * from "./engine/graph.js";
 export * from "./engine/grid.js";
 export * from "./engine/lexer.js";
@@ -8,3 +9,7 @@ export * from "./engine/precedents.js";
 export * from "./engine/printer.js";
 export * from "./engine/recalc.js";
 export * from "./engine/reference.js";
+export * from "./engine/value.js";
+export { Workbook, interpretInput } from "./engine/workbook.js";
+export type { Address, CellRecord } from "./engine/workbook.js";
+export * from "./functions/index.js";
