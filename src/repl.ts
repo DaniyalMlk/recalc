@@ -1,0 +1,240 @@
+import { Workbook } from "./engine/workbook.js";
+import { formatA1, iterateRange, parseA1 } from "./engine/reference.js";
+import { registeredFunctionNames, lookupFunction } from "./functions/index.js";
+import { formatValue } from "./engine/value.js";
+
+// Written as an escape sequence so the source stays plain text.
+const ESC = "\u001b[";
+const DIM = `${ESC}2m`;
+const BOLD = `${ESC}1m`;
+const RED = `${ESC}31m`;
+const CYAN = `${ESC}36m`;
+const RESET = `${ESC}0m`;
+
+const useColour = process.stdout.isTTY === true;
+export const paint = (code: string, text: string) =>
+  useColour ? `${code}${text}${RESET}` : text;
+
+const ASSIGNMENT = /^(\$?[A-Za-z]{1,3}\$?[0-9]{1,7})\s*=\s*(.*)$/;
+const ADDRESS = /^\$?[A-Za-z]{1,3}\$?[0-9]{1,7}$/;
+
+export const HELP = `
+  ${paint(BOLD, "Entering data")}
+    A1 = 42                 store a number
+    A1 = hello              store text
+    B1 = =SUM(A1:A9)        store a formula (note the second =)
+    A1                      show a cell's value and formula
+
+  ${paint(BOLD, "Inspecting")}
+    .list                   every non-empty cell
+    .show A1:C9             a rectangular block
+    .prec A1                what A1 reads
+    .deps A1                what reads A1
+    .plan A1                recalculation order if A1 changed
+    .cycles                 circular references in the sheet
+
+  ${paint(BOLD, "Other")}
+    .fns [prefix]           registered functions
+    .help FN                one function's signature
+    .demo                   load a small discounted cash flow model
+    .clear A1               empty a cell
+    .reset                  start an empty sheet
+    .quit
+`;
+
+const DEMO: Record<string, string | number> = {
+  A1: "Discount rate",
+  B1: 0.09,
+  A2: "Year",
+  B2: 0,
+  C2: 1,
+  D2: 2,
+  E2: 3,
+  F2: 4,
+  A3: "Free cash flow",
+  B3: -250000,
+  C3: 60000,
+  D3: 85000,
+  E3: 110000,
+  F3: 140000,
+  A4: "Cumulative",
+  C4: "=B3+C3",
+  D4: "=C4+D3",
+  E4: "=D4+E3",
+  F4: "=E4+F3",
+  A6: "NPV",
+  B6: "=B3+NPV(B1,C3:F3)",
+  A7: "IRR",
+  B7: "=IRR(B3:F3)",
+  A8: "Profitability index",
+  B8: "=NPV(B1,C3:F3)/-B3",
+  A9: "Years to payback",
+  B9: "=MATCH(0,C4:F4,1)+1",
+  A10: "Verdict",
+  B10: '=IF(B6>0,"accept","reject")',
+};
+
+function loadDemo(book: Workbook): void {
+  book.setCells(DEMO);
+}
+
+function describeCell(book: Workbook, address: string): string {
+  const formula = book.getFormula(address);
+  const value = book.getValue(address);
+  const rendered = formatValue(value);
+  const shown = rendered === "" ? paint(DIM, "(blank)") : rendered;
+  const detail =
+    typeof value === "object" && value !== null && "detail" in value
+      ? paint(DIM, `  ${value.detail ?? ""}`)
+      : "";
+  const source = formula === null ? "" : paint(DIM, `   ${formula}`);
+  return `  ${paint(CYAN, address)}  ${shown}${source}${detail}`;
+}
+
+function listCells(book: Workbook): string[] {
+  const extent = book.extent();
+  if (extent === null) return [paint(DIM, "  (empty sheet)")];
+  const lines: string[] = [];
+  for (const coord of iterateRange(extent)) {
+    const address = formatA1({
+      ...coord,
+      colAbsolute: false,
+      rowAbsolute: false,
+    });
+    if (book.has(address)) lines.push(describeCell(book, address));
+  }
+  return lines;
+}
+
+/**
+ * A shell session over one workbook.
+ *
+ * The command handling is kept separate from the readline loop so it can be
+ * driven directly by tests: `handle` takes a line and returns what would have
+ * been printed, with no I/O of its own.
+ */
+export class ReplSession {
+  private book = new Workbook();
+
+  /** Signals that the caller should exit; `handle` never exits by itself. */
+  static readonly QUIT = Symbol("quit");
+
+  get workbook(): Workbook {
+    return this.book;
+  }
+
+  handle(line: string): string | typeof ReplSession.QUIT | null {
+    return handle(line, this.book, () => {
+      this.book = new Workbook();
+    });
+  }
+}
+
+function handle(
+  line: string,
+  book: Workbook,
+  reset: () => void,
+): string | typeof ReplSession.QUIT | null {
+  if (line === ".quit" || line === ".exit") {
+    return ReplSession.QUIT;
+  }
+
+  if (line === ".help") return HELP;
+
+  if (line.startsWith(".help ")) {
+    const name = line.slice(6).trim().toUpperCase();
+    const def = lookupFunction(name);
+    if (def === undefined) return paint(RED, `  no function named ${name}`);
+    const max = def.maxArgs === Infinity ? "..." : String(def.maxArgs);
+    return `  ${paint(CYAN, def.name)}  ${def.minArgs}-${max} args\n  ${def.description}`;
+  }
+
+  if (line === ".reset") {
+    reset();
+    return "  new sheet";
+  }
+
+  if (line === ".demo") {
+    loadDemo(book);
+    return listCells(book).join("\n");
+  }
+
+  if (line === ".list") return listCells(book).join("\n");
+
+  if (line === ".cycles") {
+    const cycles = book.cycles();
+    if (cycles.length === 0) return paint(DIM, "  no circular references");
+    return cycles.map((cycle) => `  ${cycle.join(" -> ")}`).join("\n");
+  }
+
+  if (line.startsWith(".fns")) {
+    const prefix = line.slice(4).trim().toUpperCase();
+    const names = registeredFunctionNames().filter((name) =>
+      name.startsWith(prefix),
+    );
+    if (names.length === 0) return paint(DIM, "  none");
+    return `  ${names.join("  ")}\n  ${paint(DIM, `${names.length} function(s)`)}`;
+  }
+
+  if (line.startsWith(".show ")) {
+    const [from, to] = line.slice(6).trim().split(":");
+    if (from === undefined || to === undefined) {
+      return paint(RED, "  usage: .show A1:C9");
+    }
+    const range = { start: parseA1(from), end: parseA1(to) };
+    const lines: string[] = [];
+    for (const coord of iterateRange(range)) {
+      const address = formatA1({
+        ...coord,
+        colAbsolute: false,
+        rowAbsolute: false,
+      });
+      if (book.has(address)) lines.push(describeCell(book, address));
+    }
+    return lines.length === 0 ? paint(DIM, "  (empty)") : lines.join("\n");
+  }
+
+  for (const [command, action] of [
+    [".prec ", (address: string) => book.precedentsOf(address)],
+    [".deps ", (address: string) => book.dependentsOf(address)],
+  ] as const) {
+    if (line.startsWith(command)) {
+      const address = line.slice(command.length).trim();
+      const result = action(address);
+      return result.length === 0
+        ? paint(DIM, "  none")
+        : `  ${result.join("  ")}`;
+    }
+  }
+
+  if (line.startsWith(".plan ")) {
+    const address = line.slice(6).trim();
+    const order = book.recalculationOrder(address);
+    return order.length <= 1
+      ? `  ${address}` + paint(DIM, "  (nothing else would change)")
+      : `  ${order.join(" -> ")}`;
+  }
+
+  if (line.startsWith(".clear ")) {
+    const address = line.slice(7).trim();
+    book.clearCell(address);
+    return `  cleared ${address}`;
+  }
+
+  if (line.startsWith(".")) {
+    return paint(RED, `  unknown command: ${line.split(" ")[0]}`);
+  }
+
+  const assignment = ASSIGNMENT.exec(line);
+  if (assignment !== null) {
+    const address = assignment[1]!;
+    book.setCell(address, assignment[2]!);
+    return describeCell(book, address);
+  }
+
+  if (ADDRESS.test(line)) {
+    return describeCell(book, line);
+  }
+
+  return paint(RED, "  not understood - try .help");
+}

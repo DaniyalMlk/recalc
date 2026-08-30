@@ -40,6 +40,12 @@ function toCoord(address: Address): CellRef | Coord {
   return typeof address === "string" ? parseA1(address) : address;
 }
 
+/** Render a dependency-graph cell id as a plain A1 address. */
+function addressOfId(id: string): string {
+  const [col, row] = id.split(":").map(Number) as [number, number];
+  return formatA1({ col, row, colAbsolute: false, rowAbsolute: false });
+}
+
 /**
  * Interpret typed input the way a cell does.
  *
@@ -185,32 +191,31 @@ export class Workbook {
   precedentsOf(address: Address): string[] {
     const coord = toCoord(address);
     return [
-      ...this.graph.precedentsOf(coord).map((id) => {
-        const [col, row] = id.split(":").map(Number) as [number, number];
-        return formatA1({ col, row, colAbsolute: false, rowAbsolute: false });
-      }),
+      ...this.graph.precedentsOf(coord).map(addressOfId),
       ...this.graph.rangePrecedentsOf(coord).map(formatRange),
     ];
   }
 
   /** A1 addresses of the cells that read this cell. */
   dependentsOf(address: Address): string[] {
-    return this.graph.dependentsOf(toCoord(address)).map((id) => {
-      const [col, row] = id.split(":").map(Number) as [number, number];
-      return formatA1({ col, row, colAbsolute: false, rowAbsolute: false });
-    });
+    return this.graph.dependentsOf(toCoord(address)).map(addressOfId);
+  }
+
+  /**
+   * The order cells would be recomputed in if `address` changed, as A1
+   * addresses. Useful for explaining why an edit is expensive.
+   */
+  recalculationOrder(address: Address): string[] {
+    return this.graph
+      .planRecalculation([toCoord(address)])
+      .order.map(addressOfId);
   }
 
   /** Circular references currently in the sheet, as A1 address groups. */
   cycles(): string[][] {
     const seeds = [...this.cells.coords()];
     const plan = this.graph.planRecalculation(seeds);
-    return plan.cycles.map((cycle) =>
-      cycle.map((id) => {
-        const [col, row] = id.split(":").map(Number) as [number, number];
-        return formatA1({ col, row, colAbsolute: false, rowAbsolute: false });
-      }),
-    );
+    return plan.cycles.map((cycle) => cycle.map(addressOfId));
   }
 
   /** Recompute every cell, in dependency order. */
