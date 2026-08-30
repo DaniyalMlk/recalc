@@ -1,0 +1,6 @@
+node_modules/
+dist/
+coverage/
+graphify-out/
+*.tsbuildinfo
+.DS_Store
