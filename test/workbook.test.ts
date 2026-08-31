@@ -8,6 +8,20 @@ describe("interpretInput", () => {
     expect(interpretInput("=1+1").ast).not.toBeNull();
   });
 
+  it("treats a leading apostrophe as a text escape", () => {
+    expect(interpretInput("'007")).toEqual({ ast: null, literal: "007" });
+    expect(interpretInput("'=1+1")).toEqual({ ast: null, literal: "=1+1" });
+    expect(interpretInput("'TRUE")).toEqual({ ast: null, literal: "TRUE" });
+  });
+
+  it("escapes only the first apostrophe", () => {
+    expect(interpretInput("''x").literal).toBe("'x");
+  });
+
+  it("leaves an apostrophe that is not leading alone", () => {
+    expect(interpretInput("it's").literal).toBe("it's");
+  });
+
   it("reads numeric text as a number", () => {
     expect(interpretInput("007").literal).toBe(7);
     expect(interpretInput("-2.5").literal).toBe(-2.5);
@@ -293,5 +307,19 @@ describe("a worked sheet", () => {
     expect(book.getValue("B12")).toBe("loss-making");
     // Break-even does not depend on units, so it must not have moved.
     expect(book.getValue("B11")).toBe(649);
+  });
+
+  it("keeps the escape in the input while dropping it from the value", () => {
+    const book = new Workbook();
+    book.setCell("A1", "'0042");
+    book.setCell("A2", "=A1&\"!\"");
+
+    // The value is the text without the escape; the input is what was typed.
+    expect(book.getValue("A1")).toBe("0042");
+    expect(book.getInput("A1")).toBe("'0042");
+    expect(book.getValue("A2")).toBe("0042!");
+    // Without the escape it would have been the number 42.
+    book.setCell("A1", "0042");
+    expect(book.getValue("A1")).toBe(42);
   });
 });

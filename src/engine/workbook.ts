@@ -53,11 +53,20 @@ function addressOfId(id: string): string {
  * then numeric text becomes a number, then `TRUE`/`FALSE` become booleans, and
  * anything left over stays text. `"007"` therefore becomes the number 7, which
  * is the behaviour people expect and complain about in equal measure.
+ *
+ * A leading apostrophe comes before all of that and forces text: `'007` keeps
+ * its zeros and `'=A1` is the characters, not a formula. The apostrophe is
+ * consumed rather than stored, because it is a prefix on the *input* and not
+ * the first character of the value — but `getInput` still returns it, since
+ * that is what was typed and reopening the cell has to show it again.
  */
 export function interpretInput(input: string): {
   ast: Node | null;
   literal: Value;
 } {
+  if (input.startsWith("'")) {
+    return { ast: null, literal: input.slice(1) };
+  }
   if (input.startsWith("=")) {
     return { ast: parseFormula(input), literal: null };
   }
