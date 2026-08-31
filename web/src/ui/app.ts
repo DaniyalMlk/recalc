@@ -16,7 +16,12 @@ import { AxisMetrics } from "../core/metrics.js";
 import { Selection } from "../core/selection.js";
 import type { CellRect, Direction } from "../core/selection.js";
 import { pageStep } from "../core/viewport.js";
-import { SAMPLE_SHEET, SAMPLE_WIDTHS, sampleFormulas } from "../sample.js";
+import {
+  SAMPLE_NAMES,
+  SAMPLE_SHEET,
+  SAMPLE_WIDTHS,
+  sampleFormulas,
+} from "../sample.js";
 import { GridView } from "./grid-view.js";
 import type { CellPaint } from "./grid-view.js";
 import { Inspector } from "./inspector.js";
@@ -353,6 +358,9 @@ export class App {
     for (const [col, width] of Object.entries(SAMPLE_WIDTHS)) {
       this.cols.resize(Number(col), width);
     }
+    for (const [name, target] of Object.entries(SAMPLE_NAMES)) {
+      this.workbook.defineName(name, target);
+    }
     this.workbook.setCells({ ...SAMPLE_SHEET, ...sampleFormulas() });
 
     this.el.sheetName.textContent = "project appraisal";
@@ -363,6 +371,9 @@ export class App {
   }
 
   private clearSheet(): void {
+    for (const entry of this.workbook.names()) {
+      this.workbook.deleteName(entry.name);
+    }
     this.workbook.setCells(
       Object.fromEntries(
         Object.keys(this.workbook.toInputMap()).map((address) => [address, null]),
