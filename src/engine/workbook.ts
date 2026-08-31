@@ -6,8 +6,11 @@ import { evaluate } from "./evaluator.js";
 import type { EvalContext } from "./evaluator.js";
 import { DependencyGraph } from "./graph.js";
 import { SparseGrid } from "./grid.js";
+import { NameTable } from "./names.js";
+import type { NameBinding, NameEntry } from "./names.js";
 import { parseFormula } from "./parser.js";
 import { extractPrecedents } from "./precedents.js";
+import type { Precedents } from "./precedents.js";
 import { printFormula } from "./printer.js";
 import { recalculate } from "./recalc.js";
 import {
@@ -16,6 +19,7 @@ import {
   formatRange,
   iterateRange,
   parseA1,
+  parseCellKey,
 } from "./reference.js";
 import type { CellRef, Coord, RangeRef } from "./reference.js";
 import { formatValue, parseNumericText } from "./value.js";
@@ -91,12 +95,23 @@ export function interpretInput(input: string): {
 export class Workbook {
   private readonly cells = new SparseGrid<CellRecord>();
   private readonly graph = new DependencyGraph();
-  private readonly names = new Map<string, Value>();
+  private readonly nameTable = new NameTable();
+
+  /**
+   * Which cells mention which name.
+   *
+   * Redefining a name has to reach the formulas that use it, and those
+   * formulas are not reachable through the graph — the graph holds the cells a
+   * name resolved *to*, not the name itself. Recalculating the whole sheet
+   * would be correct and would also throw away the entire point of the graph,
+   * so the users are tracked here instead.
+   */
+  private readonly nameUsers = new Map<string, Set<string>>();
 
   private readonly context: EvalContext = {
     readCell: (coord) => this.cells.get(coord)?.value ?? null,
     readRange: (range) => this.readRange(range),
-    resolveName: (name) => this.names.get(name.toUpperCase()),
+    resolveName: (name) => this.nameTable.get(name),
   };
 
   /**
@@ -117,12 +132,7 @@ export class Workbook {
     const { ast, literal } = interpretInput(text);
     this.cells.set(coord, { input: text, ast, literal, value: literal });
 
-    if (ast === null) {
-      this.graph.clearPrecedents(coord);
-    } else {
-      this.graph.setPrecedents(coord, extractPrecedents(ast));
-    }
-
+    this.writePrecedents(coord, ast);
     this.recalculateFrom([coord]);
   }
 
@@ -140,11 +150,7 @@ export class Workbook {
       }
       const { ast, literal } = interpretInput(text);
       this.cells.set(coord, { input: text, ast, literal, value: literal });
-      if (ast === null) {
-        this.graph.clearPrecedents(coord);
-      } else {
-        this.graph.setPrecedents(coord, extractPrecedents(ast));
-      }
+      this.writePrecedents(coord, ast);
       seeds.push(coord);
     }
     this.recalculateFrom(seeds);
@@ -153,14 +159,40 @@ export class Workbook {
   clearCell(address: Address): void {
     const coord = toCoord(address);
     this.cells.delete(coord);
-    this.graph.clearPrecedents(coord);
+    this.writePrecedents(coord, null);
     this.recalculateFrom([coord]);
   }
 
-  /** Define a named value, usable as a bare word in formulas. */
+  /** Define a named constant, usable as a bare word in formulas. */
   setName(name: string, value: Value): void {
-    this.names.set(name.toUpperCase(), value);
-    this.recalculateAll();
+    this.rebindName(this.nameTable.setValue(name, value));
+  }
+
+  /**
+   * Define a name for a cell or a range, given as A1 text.
+   *
+   * `book.defineName("Revenue", "B2:B13")` makes `SUM(Revenue)` behave exactly
+   * as though the range had been typed out, invalidation included.
+   */
+  defineName(name: string, target: string): void {
+    this.rebindName(this.nameTable.setReference(name, target));
+  }
+
+  /** Remove a name. Formulas that used it fall back to `#NAME?`. */
+  deleteName(name: string): boolean {
+    const removed = this.nameTable.delete(name);
+    if (removed) this.rebindName(name.toUpperCase());
+    return removed;
+  }
+
+  /** What a name currently stands for, or `undefined`. */
+  lookupName(name: string): NameBinding | undefined {
+    return this.nameTable.get(name);
+  }
+
+  /** Every defined name, sorted. */
+  names(): NameEntry[] {
+    return this.nameTable.list();
   }
 
   getValue(address: Address): Value {
@@ -230,6 +262,82 @@ export class Workbook {
   /** Recompute every cell, in dependency order. */
   recalculateAll(): void {
     this.recalculateFrom([...this.cells.coords()]);
+  }
+
+  /**
+   * Record what a cell reads, with any names it mentions expanded to the
+   * cells and ranges they stand for.
+   *
+   * The expansion is what makes a named range behave like a written-out one.
+   * Without it, `SUM(Revenue)` would carry no edge to `B7` and editing `B7`
+   * would leave a stale total on screen — the worst kind of spreadsheet bug,
+   * because nothing about it looks wrong.
+   */
+  private writePrecedents(coord: Coord, ast: Node | null): void {
+    const key = cellKey(coord);
+    for (const users of this.nameUsers.values()) users.delete(key);
+
+    if (ast === null) {
+      this.graph.clearPrecedents(coord);
+      return;
+    }
+
+    const precedents = extractPrecedents(ast);
+    for (const name of precedents.names) {
+      const users = this.nameUsers.get(name);
+      if (users === undefined) this.nameUsers.set(name, new Set([key]));
+      else users.add(key);
+    }
+
+    this.graph.setPrecedents(coord, this.expandNames(precedents));
+  }
+
+  /** Add the cells and ranges the mentioned names resolve to. */
+  private expandNames(precedents: Precedents): Precedents {
+    if (precedents.names.length === 0) return precedents;
+
+    const cells = [...precedents.cells];
+    const ranges = [...precedents.ranges];
+    let expanded = false;
+
+    for (const name of precedents.names) {
+      const binding = this.nameTable.get(name);
+      if (binding === undefined) continue;
+      if (binding.kind === "cell") {
+        cells.push(binding.ref);
+        expanded = true;
+      } else if (binding.kind === "range") {
+        ranges.push(binding.range);
+        expanded = true;
+      }
+    }
+
+    return expanded ? { cells, ranges, names: precedents.names } : precedents;
+  }
+
+  /**
+   * Re-point every formula that mentions a name, then recalculate from them.
+   *
+   * Only the users are touched, so defining a name in a large sheet costs what
+   * the name is actually used by rather than the size of the sheet.
+   */
+  private rebindName(key: string): void {
+    const users = this.nameUsers.get(key);
+    if (users === undefined || users.size === 0) return;
+
+    const seeds: Coord[] = [];
+    for (const id of [...users]) {
+      const coord = parseCellKey(id);
+      const record = this.cells.get(coord);
+      if (record === undefined || record.ast === null) continue;
+      this.graph.setPrecedents(
+        coord,
+        this.expandNames(extractPrecedents(record.ast)),
+      );
+      seeds.push(coord);
+    }
+
+    this.recalculateFrom(seeds);
   }
 
   private recalculateFrom(seeds: readonly Coord[]): void {
