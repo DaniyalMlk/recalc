@@ -13,10 +13,12 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build:web": "vite build --config web/vite.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "repl": "tsx src/cli.ts"
+    "repl": "tsx src/cli.ts",
+    "web": "vite --config web/vite.config.ts"
   },
   "keywords": [
     "spreadsheet",
@@ -30,6 +32,7 @@
     "@types/node": "^22.20.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
+    "vite": "^6.4.3",
     "vitest": "^2.1.8"
   }
 }
