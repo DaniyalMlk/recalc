@@ -54,6 +54,16 @@
   box-sizing: border-box;
 }
 
+/*
+ * The `hidden` attribute is `display: none` from the user-agent sheet, which
+ * any class setting `display` outranks. The grid hides recycled cells and
+ * headers by that attribute, so without this a pool node that scrolled out of
+ * the window would keep drawing itself where it last was.
+ */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;
@@ -353,6 +363,52 @@ body {
 
 .layer--marks {
   pointer-events: none;
+}
+
+/* Kept in the tab order and readable to a screen reader, off the canvas. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/*
+ * Only drawn while a file is over the window, so it conveys a state and
+ * nothing else. It fades in because appearing instantly under the cursor
+ * reads as a glitch rather than as a target.
+ */
+.dropzone {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: rgba(247, 246, 243, 0.86);
+  border: 2px dashed var(--accent);
+  animation: dropzone-in 160ms var(--ease-out);
+}
+
+.dropzone__label {
+  font-size: 12.5px;
+  color: var(--accent);
+  background: var(--surface);
+  border: 1px solid var(--accent-line);
+  border-radius: 6px;
+  padding: 8px 14px;
+}
+
+@keyframes dropzone-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* ----------------------------------------------------------------- head -- */

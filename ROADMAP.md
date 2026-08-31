@@ -53,7 +53,7 @@ tree green and the public API usable.
 
 ## Phase 7 — Interchange and performance
 
-- [ ] CSV import and export
+- [x] CSV import and export, in the library, the shell and the grid
 - [ ] Named ranges
 - [ ] Benchmark harness over large dependency chains
 - [ ] Recalculation profiling and hot-path tuning

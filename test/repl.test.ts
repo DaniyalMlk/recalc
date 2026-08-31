@@ -189,3 +189,93 @@ describe("bad input", () => {
     expect(one(".show A1")).toContain("usage");
   });
 });
+
+describe("CSV commands", () => {
+  /** A session with an in-memory filesystem, plus the files it wrote. */
+  function withFiles(seed: Record<string, string> = {}): {
+    session: ReplSession;
+    files: Map<string, string>;
+  } {
+    const files = new Map(Object.entries(seed));
+    const session = new ReplSession({
+      read: (path) => {
+        const text = files.get(path);
+        if (text === undefined) throw new Error(`no such file: ${path}`);
+        return text;
+      },
+      write: (path, text) => {
+        files.set(path, text);
+      },
+    });
+    return { session, files };
+  }
+
+  it("prints the sheet as CSV", () => {
+    const { session } = withFiles();
+    session.handle("A1 = Units");
+    session.handle("B1 = 1200");
+    expect(session.handle(".csv")).toBe("Units,1200");
+  });
+
+  it("prints formula text when asked", () => {
+    const { session } = withFiles();
+    session.handle("A1 = 6");
+    session.handle("B1 = =A1*2");
+    expect(session.handle(".csv")).toBe("6,12");
+    expect(session.handle(".csv formulas")).toBe("6,=A1*2");
+  });
+
+  it("says so when the sheet is empty", () => {
+    const { session } = withFiles();
+    expect(session.handle(".csv")).toContain("empty sheet");
+  });
+
+  it("writes a file and reports the count", () => {
+    const { session, files } = withFiles();
+    session.handle("A1 = 1");
+    session.handle("B1 = 2");
+    expect(session.handle(".export out.csv")).toContain("2 cell(s)");
+    expect(files.get("out.csv")).toBe("1,2");
+  });
+
+  it("reads a file into the sheet and recalculates it", () => {
+    const { session } = withFiles({
+      "in.csv": "Region,Units\nNorth,1200\nTotal,=SUM(B2:B2)\n",
+    });
+    expect(session.handle(".import in.csv")).toContain("A1:B3");
+    expect(session.handle("B3")).toContain("1200");
+  });
+
+  it("imports at a given origin", () => {
+    const { session } = withFiles({ "in.csv": "x" });
+    expect(session.handle(".import in.csv C5")).toContain("C5:C5");
+    expect(session.handle("C5")).toContain("x");
+  });
+
+  it("round-trips a sheet through a file", () => {
+    const { session } = withFiles();
+    session.handle("A1 = Item, with comma");
+    session.handle("B1 = =LEN(A1)");
+    const before = session.handle("B1");
+
+    session.handle(".export out.csv formulas");
+    session.handle(".reset");
+    session.handle(".import out.csv");
+
+    // The comma inside the field must survive quoting, or LEN would differ.
+    expect(session.handle("B1")).toBe(before);
+    expect(session.handle("A1")).toContain("Item, with comma");
+  });
+
+  it("refuses the file commands with no file access", () => {
+    const session = new ReplSession();
+    expect(session.handle(".import x.csv")).toContain("no file access");
+    expect(session.handle(".export x.csv")).toContain("no file access");
+  });
+
+  it("reports usage for a missing path", () => {
+    const { session } = withFiles();
+    expect(session.handle(".import ")).toContain("usage");
+    expect(session.handle(".export ")).toContain("usage");
+  });
+});
