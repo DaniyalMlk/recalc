@@ -26,7 +26,19 @@
           <button class="button" type="button" id="action-sample">
             Load example
           </button>
+          <button class="button" type="button" id="action-import">
+            Import CSV
+          </button>
+          <button class="button" type="button" id="action-export">
+            Export CSV
+          </button>
           <button class="button" type="button" id="action-clear">Clear sheet</button>
+          <input
+            class="visually-hidden"
+            id="file-input"
+            type="file"
+            accept=".csv,text/csv,text/plain"
+          />
         </div>
       </header>
 
@@ -48,6 +60,9 @@
 
       <main class="workspace">
         <section class="sheet" id="sheet" aria-label="Sheet">
+          <div class="dropzone" id="dropzone" hidden>
+            <span class="dropzone__label">Drop to import at the selected cell</span>
+          </div>
           <div class="sheet__corner" id="corner"></div>
           <div class="sheet__colhead" id="colhead">
             <div class="sheet__track" id="colhead-track"></div>

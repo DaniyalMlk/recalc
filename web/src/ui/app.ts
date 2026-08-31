@@ -8,6 +8,7 @@ import {
 } from "../../../src/engine/reference.js";
 import type { Coord } from "../../../src/engine/reference.js";
 import { Workbook } from "../../../src/engine/workbook.js";
+import { CsvError, exportCsv, importCsv } from "../../../src/io/csv.js";
 import { charsForWidth, displayValue } from "../core/display.js";
 import { highlightFormula } from "../core/highlight.js";
 import type { Highlight } from "../core/highlight.js";
@@ -64,6 +65,11 @@ export interface AppElements {
   readonly sheetName: HTMLElement;
   readonly loadSample: HTMLButtonElement;
   readonly clearSheet: HTMLButtonElement;
+  readonly importCsv: HTMLButtonElement;
+  readonly exportCsv: HTMLButtonElement;
+  readonly fileInput: HTMLInputElement;
+  readonly dropzone: HTMLElement;
+  readonly sheet: HTMLElement;
 }
 
 export class App {
@@ -127,6 +133,7 @@ export class App {
     this.bindKeyboard();
     this.bindEditors();
     this.bindActions();
+    this.bindInterchange();
   }
 
   /** Fill the sheet with the worked example and draw everything. */
@@ -367,6 +374,110 @@ export class App {
     this.selection.moveTo({ row: 0, col: 0 });
     this.grid.render();
     this.syncSelection();
+  }
+
+  /**
+   * Read CSV text into the sheet at the selected cell.
+   *
+   * The selection is the origin rather than A1, because pasting a column of
+   * figures next to an existing model is the reason to import at all.
+   */
+  private importText(text: string, name: string): void {
+    const origin = this.address(this.selection.active);
+    try {
+      const result = importCsv(this.workbook, text, { origin });
+      this.el.sheetName.textContent = name;
+      this.lastRecalc =
+        result.range === null
+          ? "nothing to import"
+          : `${result.cells} cells imported at ${origin}`;
+    } catch (error) {
+      this.lastRecalc =
+        error instanceof CsvError ? error.message : "could not read that file";
+    }
+    this.grid.render();
+    this.syncSelection();
+  }
+
+  /**
+   * Hand the sheet back as a file.
+   *
+   * Formula text, not computed values: a file the user can re-open and keep
+   * working in is worth more than one that has forgotten how it was derived.
+   */
+  private downloadCsv(): void {
+    const text = exportCsv(this.workbook, { mode: "formulas" });
+    if (text === "") {
+      this.lastRecalc = "nothing to export";
+      this.updateStatus();
+      return;
+    }
+
+    const url = URL.createObjectURL(
+      new Blob([text], { type: "text/csv;charset=utf-8" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "sheet.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+
+    this.lastRecalc = `${this.workbook.cellCount} cells exported`;
+    this.updateStatus();
+  }
+
+  private bindInterchange(): void {
+    this.el.importCsv.addEventListener("click", () => {
+      this.el.fileInput.click();
+    });
+
+    this.el.fileInput.addEventListener("change", () => {
+      const file = this.el.fileInput.files?.[0];
+      if (file === undefined) return;
+      void file.text().then((text) => {
+        this.importText(text, file.name);
+        this.el.fileInput.value = "";
+        this.el.body.focus();
+      });
+    });
+
+    this.el.exportCsv.addEventListener("click", () => {
+      this.downloadCsv();
+      this.el.body.focus();
+    });
+
+    // A drag that never entered stays counted, so track depth rather than
+    // toggling on enter and leave — child elements fire both on the way past.
+    let depth = 0;
+    const show = (visible: boolean): void => {
+      this.el.dropzone.hidden = !visible;
+    };
+
+    this.el.sheet.addEventListener("dragenter", (event) => {
+      event.preventDefault();
+      depth += 1;
+      show(true);
+    });
+
+    this.el.sheet.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      if (event.dataTransfer !== null) event.dataTransfer.dropEffect = "copy";
+    });
+
+    this.el.sheet.addEventListener("dragleave", (event) => {
+      event.preventDefault();
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) show(false);
+    });
+
+    this.el.sheet.addEventListener("drop", (event) => {
+      event.preventDefault();
+      depth = 0;
+      show(false);
+      const file = event.dataTransfer?.files?.[0];
+      if (file === undefined) return;
+      void file.text().then((text) => this.importText(text, file.name));
+    });
   }
 
   private usedRect(): CellRect | null {
