@@ -13,3 +13,4 @@ export * from "./engine/value.js";
 export { Workbook, interpretInput } from "./engine/workbook.js";
 export type { Address, CellRecord } from "./engine/workbook.js";
 export * from "./functions/index.js";
+export * from "./io/csv.js";
