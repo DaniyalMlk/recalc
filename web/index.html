@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>recalc</title>
+    <meta
+      name="description"
+      content="A spreadsheet formula engine with incremental recalculation, driven from a virtualised grid."
+    />
+    <!-- Four cells, one of them computed: the mark is the product. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23f7f6f3'/%3E%3Crect x='2.5' y='2.5' width='5' height='5' fill='%23d2cec3'/%3E%3Crect x='8.5' y='2.5' width='5' height='5' fill='%23d2cec3'/%3E%3Crect x='2.5' y='8.5' width='5' height='5' fill='%23d2cec3'/%3E%3Crect x='8.5' y='8.5' width='5' height='5' fill='%231f5f4e'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header class="topbar">
+        <div class="topbar__identity">
+          <span class="topbar__mark">recalc</span>
+          <span class="topbar__sheet" id="sheet-name">operating model</span>
+        </div>
+        <div class="topbar__actions">
+          <button class="button" type="button" id="action-sample">
+            Load example
+          </button>
+          <button class="button" type="button" id="action-clear">Clear sheet</button>
+        </div>
+      </header>
+
+      <div class="formulabar">
+        <div class="formulabar__address" id="address-box" aria-live="polite">A1</div>
+        <div class="formulabar__editor">
+          <pre class="formulabar__ink" id="formula-ink" aria-hidden="true"></pre>
+          <input
+            class="formulabar__input"
+            id="formula-input"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            aria-label="Formula for the selected cell"
+          />
+        </div>
+        <div class="formulabar__note" id="formula-note"></div>
+      </div>
+
+      <main class="workspace">
+        <section class="sheet" id="sheet" aria-label="Sheet">
+          <div class="sheet__corner" id="corner"></div>
+          <div class="sheet__colhead" id="colhead">
+            <div class="sheet__track" id="colhead-track"></div>
+          </div>
+          <div class="sheet__rowhead" id="rowhead">
+            <div class="sheet__track" id="rowhead-track"></div>
+          </div>
+          <div class="sheet__body" id="body" tabindex="0">
+            <div class="sheet__canvas" id="canvas">
+              <div class="layer" id="cell-layer"></div>
+              <div class="layer layer--marks" id="mark-layer"></div>
+              <input
+                class="celledit"
+                id="cell-input"
+                type="text"
+                spellcheck="false"
+                autocomplete="off"
+                aria-label="Cell editor"
+                hidden
+              />
+            </div>
+          </div>
+        </section>
+
+        <aside class="inspector" id="inspector" aria-label="Cell inspector">
+          <div class="inspector__head">
+            <span class="inspector__title" id="inspector-title">A1</span>
+            <span class="inspector__kind" id="inspector-kind">blank</span>
+          </div>
+          <div class="inspector__body" id="inspector-body"></div>
+        </aside>
+      </main>
+
+      <footer class="statusbar">
+        <span class="statusbar__item" id="status-selection">1 cell</span>
+        <span class="statusbar__item" id="status-stats"></span>
+        <span class="statusbar__spacer"></span>
+        <span class="statusbar__item" id="status-recalc"></span>
+      </footer>
+    </div>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
