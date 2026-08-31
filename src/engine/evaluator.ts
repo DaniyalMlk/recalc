@@ -15,6 +15,7 @@ import {
   scalar,
 } from "../functions/registry.js";
 import type { Arg, LazyArg } from "../functions/registry.js";
+import type { NameBinding } from "./names.js";
 import type { Coord, RangeRef } from "./reference.js";
 import { compareValues, toNumber, toText } from "./value.js";
 import type { Value } from "./value.js";
@@ -25,8 +26,14 @@ export interface EvalContext {
   readCell(coord: Coord): Value;
   /** Row-major values of a range, blanks included. */
   readRange(range: RangeRef): Value[];
-  /** Resolve a bare name. Return `undefined` for an unknown name. */
-  resolveName?(name: string): Value | undefined;
+  /**
+   * Resolve a bare name. Return `undefined` for an unknown name.
+   *
+   * A name may stand for a constant or for a piece of the sheet, and the two
+   * cannot be collapsed: `SUM(Revenue)` needs the range itself, not a value
+   * squeezed out of it, or a named range could never be aggregated.
+   */
+  resolveName?(name: string): NameBinding | undefined;
 }
 
 /** Evaluate a formula AST to a single value. */
@@ -70,11 +77,23 @@ export function evaluateArg(node: Node, context: EvalContext): Arg {
 
     case "name": {
       const resolved = context.resolveName?.(node.name);
-      return scalar(
-        resolved === undefined
-          ? err("#NAME?", `unknown name ${node.name}`)
-          : resolved,
-      );
+      if (resolved === undefined) {
+        return scalar(err("#NAME?", `unknown name ${node.name}`));
+      }
+      switch (resolved.kind) {
+        case "value":
+          return scalar(resolved.value);
+        case "cell":
+          return scalar(context.readCell(resolved.ref));
+        case "range":
+          // Deliberately the same shape a written-out range produces, so a
+          // name behaves exactly as though it had been typed in full.
+          return {
+            kind: "range",
+            range: resolved.range,
+            values: context.readRange(resolved.range),
+          };
+      }
     }
 
     case "unary": {
