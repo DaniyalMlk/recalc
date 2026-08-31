@@ -1,7 +1,8 @@
-import { Workbook } from "./engine/workbook.js";
+import { Workbook, interpretInput } from "./engine/workbook.js";
 import { formatA1, formatRange, iterateRange, parseA1 } from "./engine/reference.js";
 import { registeredFunctionNames, lookupFunction } from "./functions/index.js";
 import { formatValue } from "./engine/value.js";
+import { NameError, parseTarget } from "./engine/names.js";
 import { exportCsv, importCsv } from "./io/csv.js";
 
 // Written as an escape sequence so the source stays plain text.
@@ -41,6 +42,12 @@ export const HELP = `
     .clear A1               empty a cell
     .reset                  start an empty sheet
     .quit
+
+  ${paint(BOLD, "Names")}
+    .name Revenue = B2:B13  name a cell or a range
+    .name Rate = 0.11       name a constant
+    .names                  every defined name
+    .unname Revenue         remove a name
 
   ${paint(BOLD, "CSV")}
     .csv [formulas]         print the sheet as CSV
@@ -252,6 +259,49 @@ function handle(
     const address = line.slice(7).trim();
     book.clearCell(address);
     return `  cleared ${address}`;
+  }
+
+  if (line === ".names") {
+    const names = book.names();
+    if (names.length === 0) return paint(DIM, "  no names defined");
+    const width = Math.max(...names.map((entry) => entry.name.length));
+    return names
+      .map(
+        (entry) =>
+          `  ${paint(CYAN, entry.name.padEnd(width))}  ${entry.target}` +
+          paint(DIM, `  (${entry.binding.kind})`),
+      )
+      .join("\n");
+  }
+
+  if (line.startsWith(".name ")) {
+    const equals = line.indexOf("=", 6);
+    if (equals < 0) return paint(RED, "  usage: .name Revenue = B2:B13");
+    const name = line.slice(6, equals).trim();
+    const target = line.slice(equals + 1).trim();
+
+    try {
+      // A target that reads as a reference becomes one; anything else is
+      // stored as the constant it looks like, using the same rules a cell uses.
+      if (parseTarget(target) !== null) {
+        book.defineName(name, target);
+      } else {
+        book.setName(name, interpretInput(target).literal);
+      }
+    } catch (error) {
+      if (error instanceof NameError) return paint(RED, `  ${error.message}`);
+      throw error;
+    }
+
+    const binding = book.lookupName(name);
+    return `  ${name.toUpperCase()} = ${target}` + paint(DIM, `  (${binding?.kind})`);
+  }
+
+  if (line.startsWith(".unname ")) {
+    const name = line.slice(8).trim();
+    return book.deleteName(name)
+      ? `  removed ${name.toUpperCase()}`
+      : paint(RED, `  no name called ${name}`);
   }
 
   if (line === ".csv" || line.startsWith(".csv ")) {
