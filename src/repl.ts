@@ -1,7 +1,8 @@
 import { Workbook } from "./engine/workbook.js";
-import { formatA1, iterateRange, parseA1 } from "./engine/reference.js";
+import { formatA1, formatRange, iterateRange, parseA1 } from "./engine/reference.js";
 import { registeredFunctionNames, lookupFunction } from "./functions/index.js";
 import { formatValue } from "./engine/value.js";
+import { exportCsv, importCsv } from "./io/csv.js";
 
 // Written as an escape sequence so the source stays plain text.
 const ESC = "\u001b[";
@@ -40,7 +41,26 @@ export const HELP = `
     .clear A1               empty a cell
     .reset                  start an empty sheet
     .quit
+
+  ${paint(BOLD, "CSV")}
+    .csv [formulas]         print the sheet as CSV
+    .import data.csv [A1]   read a CSV file into the sheet
+    .export out.csv [formulas]
+                            write the sheet to a CSV file
 `;
+
+/**
+ * File access, injected rather than imported.
+ *
+ * `handle` is deliberately free of I/O so tests can drive it directly, and
+ * reaching for `node:fs` here would end that. The shell passes the real thing
+ * in; a test passes an in-memory pair; anything else gets a clear refusal
+ * instead of a crash.
+ */
+export interface FileAccess {
+  read(path: string): string;
+  write(path: string, text: string): void;
+}
 
 const DEMO: Record<string, string | number> = {
   A1: "Discount rate",
@@ -119,21 +139,34 @@ export class ReplSession {
   /** Signals that the caller should exit; `handle` never exits by itself. */
   static readonly QUIT = Symbol("quit");
 
+  constructor(private readonly files: FileAccess | null = null) {}
+
   get workbook(): Workbook {
     return this.book;
   }
 
   handle(line: string): string | typeof ReplSession.QUIT | null {
-    return handle(line, this.book, () => {
-      this.book = new Workbook();
-    });
+    return handle(
+      line,
+      this.book,
+      () => {
+        this.book = new Workbook();
+      },
+      this.files,
+    );
   }
+}
+
+/** Split a command tail into its whitespace-separated arguments. */
+function splitArgs(tail: string): (string | undefined)[] {
+  return tail.trim().split(/\s+/).filter((part) => part !== "");
 }
 
 function handle(
   line: string,
   book: Workbook,
   reset: () => void,
+  files: FileAccess | null = null,
 ): string | typeof ReplSession.QUIT | null {
   if (line === ".quit" || line === ".exit") {
     return ReplSession.QUIT;
@@ -219,6 +252,37 @@ function handle(
     const address = line.slice(7).trim();
     book.clearCell(address);
     return `  cleared ${address}`;
+  }
+
+  if (line === ".csv" || line.startsWith(".csv ")) {
+    const mode = line.slice(4).trim() === "formulas" ? "formulas" : "values";
+    const text = exportCsv(book, { mode, newline: "\n" });
+    return text === "" ? paint(DIM, "  (empty sheet)") : text;
+  }
+
+  if (line.startsWith(".import ")) {
+    if (files === null) return paint(RED, "  no file access in this session");
+    const [path, origin] = splitArgs(line.slice(8));
+    if (path === undefined) return paint(RED, "  usage: .import data.csv [A1]");
+    const result = importCsv(book, files.read(path), {
+      ...(origin === undefined ? {} : { origin }),
+    });
+    return result.range === null
+      ? paint(DIM, "  nothing to import")
+      : `  ${result.cells} cell(s) into ${formatRange(result.range)}`;
+  }
+
+  if (line.startsWith(".export ")) {
+    if (files === null) return paint(RED, "  no file access in this session");
+    const [path, mode] = splitArgs(line.slice(8));
+    if (path === undefined) {
+      return paint(RED, "  usage: .export out.csv [formulas]");
+    }
+    const text = exportCsv(book, {
+      mode: mode === "formulas" ? "formulas" : "values",
+    });
+    files.write(path, text);
+    return `  ${book.cellCount} cell(s) to ${path}`;
   }
 
   if (line.startsWith(".")) {
