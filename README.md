@@ -18,7 +18,7 @@ formula depends on, and recalculates only what an edit actually invalidated.
 Phases 1–6 of [ROADMAP.md](ROADMAP.md) are complete: the formula grammar, the
 reference model, the dependency graph, the evaluator, a function library of 97
 functions including a financial pack, and a web interface with a virtualised
-grid. The remaining phase covers CSV interchange, named ranges and benchmarks.
+grid. CSV interchange has landed; named ranges and benchmarks remain.
 
 ## Using it as a library
 
@@ -84,7 +84,8 @@ recalc> B10
 ```
 
 `.help` lists the commands: `.list`, `.show A1:C9`, `.prec`, `.deps`, `.plan`,
-`.cycles`, `.fns`, `.help FN`, `.demo`, `.clear`, `.reset`.
+`.cycles`, `.fns`, `.help FN`, `.demo`, `.clear`, `.reset`, and for CSV
+`.csv [formulas]`, `.import data.csv [A1]`, `.export out.csv [formulas]`.
 
 ## Install and run
 
@@ -154,6 +155,15 @@ worked examples rather than against their own output:
   values around 100,000,000 with a spread of 1, where the one-pass formula
   collapses.
 
+**CSV is scanned, not split.** `line.split(",")` is wrong on the first field
+containing a comma and `text.split("\n")` is wrong on the first field containing
+a newline, which in exported spreadsheet data is roughly every other file. The
+reader is a character scanner over the whole text, so quoting is a mode it is in
+rather than a repair applied afterwards; it takes `CRLF` and bare `LF`, a byte
+order mark, doubled quotes, and ragged rows. Export makes the value-or-formula
+choice explicit, because those are different files and only one of them
+round-trips.
+
 **The grid's rules are separated from its pixels.** Axis geometry, the visible
 window, the selection model and formula highlighting are ordinary modules with no
 DOM import, and the renderer only turns their output into nodes. The reason is
@@ -184,6 +194,7 @@ cell it addresses.
   position is `#VALUE!` rather than a silent pick from the calling row.
 - Omitted arguments (`IF(A1,,2)`) are a parse error.
 - Only one sheet; there are no cross-sheet references.
+- No named ranges: a bare word in a formula resolves only to a named constant.
 - No number formats: the grid shows the general format only, so a rate reads as
   `0.1356486793` rather than `13.56%`.
 - The grid has no undo, no clipboard and no fill handle.
