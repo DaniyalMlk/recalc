@@ -54,6 +54,16 @@
   box-sizing: border-box;
 }
 
+/*
+ * The `hidden` attribute is `display: none` from the user-agent sheet, which
+ * any class setting `display` outranks. The grid hides recycled cells and
+ * headers by that attribute, so without this a pool node that scrolled out of
+ * the window would keep drawing itself where it last was.
+ */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;
