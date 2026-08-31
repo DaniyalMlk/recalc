@@ -1,0 +1,670 @@
+/*
+ * One palette, one accent, one type scale.
+ *
+ * The grid is the product, so everything else is built to recede: a warm paper
+ * ground, hairlines instead of shadows, and a single pine accent that means
+ * "selected" and nothing else. Colour that does not carry state is not used.
+ */
+
+:root {
+  --paper: #f7f6f3;
+  --surface: #ffffff;
+  --panel: #f1efe9;
+  --panel-deep: #eae7e0;
+
+  --rule: #e3e0d8;
+  --rule-strong: #d2cec3;
+
+  --ink: #23211e;
+  --ink-soft: #57534c;
+  --ink-mute: #6f6a60;
+
+  --accent: #1f5f4e;
+  --accent-soft: rgba(31, 95, 78, 0.1);
+  --accent-line: rgba(31, 95, 78, 0.35);
+
+  --danger: #9f2f2d;
+  --danger-soft: #fbeae9;
+
+  /* Reference outline palette, matched between the formula bar and the grid. */
+  --ref-0: #1f6c9f;
+  --ref-1: #9a5b1b;
+  --ref-2: #6b3f9e;
+  --ref-3: #1d7a5f;
+  --ref-4: #a63d63;
+  --ref-5: #4a6320;
+
+  --row-height: 26px;
+  --col-width: 104px;
+  --rowhead-width: 58px;
+  --colhead-height: 28px;
+
+  --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  color-scheme: light;
+  accent-color: var(--accent);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The scrollbar is part of the grid, so it gets the grid's palette. */
+* {
+  scrollbar-color: var(--rule-strong) transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--rule-strong);
+  border: 3px solid var(--paper);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-mute);
+}
+
+/* ---------------------------------------------------------------- shell -- */
+
+.app {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  height: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 16px;
+  height: 48px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--rule);
+}
+
+.topbar__identity {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.topbar__mark {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.topbar__sheet {
+  color: var(--ink-mute);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.button {
+  appearance: none;
+  border: 1px solid var(--rule-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 11px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition:
+    background-color 140ms var(--ease-out),
+    border-color 140ms var(--ease-out);
+}
+
+.button:hover {
+  background: var(--panel-deep);
+  border-color: var(--ink-mute);
+}
+
+.button:active {
+  transform: scale(0.985);
+}
+
+.button:disabled {
+  color: var(--ink-mute);
+  background: var(--panel);
+  cursor: default;
+}
+
+/* --------------------------------------------------------- formula bar -- */
+
+.formulabar {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+  align-items: stretch;
+  height: 34px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+}
+
+.formulabar__address {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+  border-right: 1px solid var(--rule);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.formulabar__editor {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/*
+ * The coloured text and the real input sit exactly on top of each other: the
+ * input is transparent apart from its caret, and the layer underneath carries
+ * the colour. Both must use identical metrics or the caret drifts.
+ */
+.formulabar__ink,
+.formulabar__input {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 34px;
+  letter-spacing: 0;
+  padding: 0 12px;
+  margin: 0;
+  border: 0;
+  white-space: pre;
+  overflow: hidden;
+}
+
+.formulabar__ink {
+  position: absolute;
+  inset: 0;
+  color: var(--ink);
+  pointer-events: none;
+}
+
+.formulabar__input {
+  position: relative;
+  width: 100%;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--ink);
+  outline: none;
+}
+
+.formulabar__input::placeholder {
+  color: var(--ink-mute);
+}
+
+.tok-function {
+  color: var(--ink);
+  font-weight: 600;
+}
+.tok-number {
+  color: var(--ink-soft);
+}
+.tok-string {
+  color: #4a6320;
+}
+.tok-error {
+  color: var(--danger);
+}
+.tok-operator,
+.tok-paren {
+  color: var(--ink-mute);
+}
+.tok-name {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+}
+.tok-ref-0 { color: var(--ref-0); }
+.tok-ref-1 { color: var(--ref-1); }
+.tok-ref-2 { color: var(--ref-2); }
+.tok-ref-3 { color: var(--ref-3); }
+.tok-ref-4 { color: var(--ref-4); }
+.tok-ref-5 { color: var(--ref-5); }
+
+.formulabar__note {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 11.5px;
+  color: var(--danger);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- sheet -- */
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 288px;
+  min-height: 0;
+}
+
+.sheet {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--rowhead-width) minmax(0, 1fr);
+  grid-template-rows: var(--colhead-height) minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--rule);
+}
+
+.sheet__corner {
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  background: var(--panel);
+}
+
+.sheet__colhead,
+.sheet__rowhead {
+  position: relative;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.sheet__colhead {
+  border-bottom: 1px solid var(--rule);
+}
+
+.sheet__rowhead {
+  border-right: 1px solid var(--rule);
+}
+
+.sheet__track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+}
+
+.sheet__body {
+  overflow: auto;
+  outline: none;
+}
+
+.sheet__canvas {
+  position: relative;
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+}
+
+.layer--marks {
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------- head -- */
+
+.head {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-mute);
+  user-select: none;
+}
+
+.head--col {
+  top: 0;
+  height: var(--colhead-height);
+  border-right: 1px solid var(--rule);
+}
+
+.head--row {
+  left: 0;
+  width: var(--rowhead-width);
+  border-bottom: 1px solid var(--rule);
+}
+
+.head.is-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.head__grip {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
+}
+
+.head__grip:hover::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 3px;
+  width: 1px;
+  height: 100%;
+  background: var(--accent);
+}
+
+/* ----------------------------------------------------------------- cell -- */
+
+.cell {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  padding: 0 7px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: cell;
+}
+
+.cell--number {
+  justify-content: flex-end;
+}
+
+.cell--text {
+  justify-content: flex-start;
+  font-family: var(--sans);
+  font-size: 12.5px;
+}
+
+.cell--boolean {
+  justify-content: center;
+  color: var(--ink-soft);
+}
+
+.cell--error {
+  justify-content: flex-end;
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/*
+ * A computed cell and a typed one hold the same kind of value, and telling
+ * them apart is the single most useful thing the grid can say on its own. A
+ * corner marker at this size reads as grit, so the whole cell carries it: a
+ * tint far too weak to compete with the digits, but enough that the computed
+ * columns separate from the entered ones at a glance.
+ */
+.cell--formula {
+  background: rgba(31, 95, 78, 0.035);
+}
+
+.cell--formula.cell--error {
+  background: var(--danger-soft);
+}
+
+/* ----------------------------------------------------------- selection -- */
+
+.mark {
+  position: absolute;
+}
+
+.mark--range {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+}
+
+.mark--active {
+  border: 2px solid var(--accent);
+}
+
+.mark--ref {
+  border: 1.5px dashed currentColor;
+  border-radius: 2px;
+}
+
+.mark--ref-0 { color: var(--ref-0); }
+.mark--ref-1 { color: var(--ref-1); }
+.mark--ref-2 { color: var(--ref-2); }
+.mark--ref-3 { color: var(--ref-3); }
+.mark--ref-4 { color: var(--ref-4); }
+.mark--ref-5 { color: var(--ref-5); }
+
+.celledit {
+  position: absolute;
+  z-index: 5;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  padding: 0 6px;
+  margin: 0;
+  border: 2px solid var(--accent);
+  background: var(--surface);
+  color: var(--ink);
+  outline: none;
+}
+
+/* ------------------------------------------------------------ inspector -- */
+
+.inspector {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  background: var(--panel);
+}
+
+.inspector__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.inspector__title {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.inspector__kind {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.inspector__body {
+  overflow-y: auto;
+  padding: 4px 0 20px;
+}
+
+.field {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.field:last-child {
+  border-bottom: 0;
+}
+
+.field__label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin-bottom: 6px;
+}
+
+.field__value {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.field__value--muted {
+  color: var(--ink-mute);
+}
+
+.field__value--error {
+  color: var(--danger);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.chip {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--rule-strong);
+  background: var(--surface);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: border-color 140ms var(--ease-out), color 140ms var(--ease-out);
+}
+
+.chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.chain__step {
+  padding: 1px 5px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+}
+
+.chain__arrow {
+  color: var(--ink-mute);
+}
+
+.empty {
+  padding: 24px 16px;
+  color: var(--ink-mute);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.empty code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: var(--ink-soft);
+}
+
+/* ------------------------------------------------------------- status --- */
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 26px;
+  padding: 0 16px;
+  background: var(--panel);
+  border-top: 1px solid var(--rule);
+  font-size: 11.5px;
+  color: var(--ink-mute);
+}
+
+.statusbar__item {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.statusbar__spacer {
+  flex: 1;
+}
+
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inspector {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 1ms !important;
+  }
+}

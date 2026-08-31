@@ -15,10 +15,10 @@ formula depends on, and recalculates only what an edit actually invalidated.
 
 ## Status
 
-Phases 1–5 of [ROADMAP.md](ROADMAP.md) are complete: the formula grammar, the
-reference model, the dependency graph, the evaluator, and a function library of
-97 functions including a financial pack. Later phases add a web interface and
-CSV interchange.
+Phases 1–6 of [ROADMAP.md](ROADMAP.md) are complete: the formula grammar, the
+reference model, the dependency graph, the evaluator, a function library of 97
+functions including a financial pack, and a web interface with a virtualised
+grid. The remaining phase covers CSV interchange, named ranges and benchmarks.
 
 ## Using it as a library
 
@@ -44,6 +44,21 @@ book.getValue("B12");       // "loss-making"
 book.precedentsOf("B9");    // ["B8", "B4"]
 book.recalculationOrder("B1"); // ["B1", "B6", "B8", "B9", "B12"]
 ```
+
+## Using it from the browser
+
+```bash
+npm run web        # dev server
+npm run build:web  # static bundle in web/dist
+```
+
+The grid is virtualised: only the cells inside the viewport plus a small
+overscan band exist as DOM nodes, so a 4,096-row sheet and a 30-row one cost the
+same to render. Arrow keys move, `Shift`+arrows extend, `Ctrl`+arrows jump to the
+edge of a block of content, `F2` opens a cell, and `Tab` walks a marked-out block
+without leaving it. Selecting a cell shows what it reads, what reads it, and the
+order the engine would recompute in; editing a formula outlines each reference on
+the grid in the colour it is shown in the formula bar.
 
 ## Using it from the shell
 
@@ -78,7 +93,9 @@ npm install
 npm test          # vitest
 npm run typecheck # tsc --noEmit
 npm run build     # emits dist/
+npm run build:web # emits web/dist/
 npm run repl      # interactive shell
+npm run web       # dev server for the grid
 ```
 
 ## Design decisions that mattered
@@ -137,6 +154,29 @@ worked examples rather than against their own output:
   values around 100,000,000 with a spread of 1, where the one-pass formula
   collapses.
 
+**The grid's rules are separated from its pixels.** Axis geometry, the visible
+window, the selection model and formula highlighting are ordinary modules with no
+DOM import, and the renderer only turns their output into nodes. The reason is
+that these are the parts that are hard to get right and impossible to check
+through a browser: that `Ctrl`+`Down` stops at the end of a block rather than the
+end of the sheet, that `Shift`+`Down` grows the selection while leaving the
+typing cursor where it was, that a resized row does not scroll its own top out of
+view. All of it is exercised under vitest with no DOM environment at all.
+
+**Column offsets are sparse, not materialised.** A prefix-sum array over a
+million rows would cost eight megabytes to answer a question that is almost
+always `row * defaultHeight`. Instead only the resized indices are stored, sorted,
+with a running total of how far they displace everything after them; an offset is
+one binary search over that list, and a hit test is one binary search over the
+index space on top of it.
+
+**Highlighting classifies tokens the parser has not reached yet.** A formula is
+unparseable for most of the time it is being typed, so the formula bar cannot
+wait for an AST. It walks the token stream with one token of lookahead instead,
+which is enough to make the one decision that matters — a word followed by `(` is
+a function, so `LOG10(100)` colours as a call while `LOG10` alone colours as the
+cell it addresses.
+
 ## Known gaps
 
 - No CI is configured, so the suite runs locally only.
@@ -144,6 +184,9 @@ worked examples rather than against their own output:
   position is `#VALUE!` rather than a silent pick from the calling row.
 - Omitted arguments (`IF(A1,,2)`) are a parse error.
 - Only one sheet; there are no cross-sheet references.
+- No number formats: the grid shows the general format only, so a rate reads as
+  `0.1356486793` rather than `13.56%`.
+- The grid has no undo, no clipboard and no fill handle.
 
 ## License
 

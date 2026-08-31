@@ -45,10 +45,11 @@ tree green and the public API usable.
 
 ## Phase 6 — Web interface
 
-- [ ] Virtualised grid with keyboard navigation and selection
-- [ ] Formula bar with reference highlighting
-- [ ] Live recalculation surfaced as the sheet is edited
-- [ ] Precedent / dependent inspection for the selected cell
+- [x] Virtualised grid with keyboard navigation and selection
+- [x] Formula bar with reference highlighting
+- [x] Live recalculation surfaced as the sheet is edited
+- [x] Precedent / dependent inspection for the selected cell
+- [x] Resizable columns backed by sparse axis metrics
 
 ## Phase 7 — Interchange and performance
 
