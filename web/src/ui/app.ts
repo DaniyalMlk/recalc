@@ -16,7 +16,12 @@ import { AxisMetrics } from "../core/metrics.js";
 import { Selection } from "../core/selection.js";
 import type { CellRect, Direction } from "../core/selection.js";
 import { pageStep } from "../core/viewport.js";
-import { SAMPLE_SHEET, SAMPLE_WIDTHS, sampleFormulas } from "../sample.js";
+import {
+  SAMPLE_NAMES,
+  SAMPLE_SHEET,
+  SAMPLE_WIDTHS,
+  sampleFormulas,
+} from "../sample.js";
 import { GridView } from "./grid-view.js";
 import type { CellPaint } from "./grid-view.js";
 import { Inspector } from "./inspector.js";
@@ -219,9 +224,9 @@ export class App {
     const coord = this.selection.active;
     this.editing = { coord, buffer: initial, host };
 
-    this.positionEditor();
     this.el.cellInput.hidden = host !== "cell";
     this.el.cellInput.value = initial;
+    this.positionEditor();
     this.setFormulaText(initial);
 
     const input = host === "cell" ? this.el.cellInput : this.el.formulaInput;
@@ -231,14 +236,29 @@ export class App {
     this.refreshHighlight(initial);
   }
 
+  /**
+   * Put the editor over its cell, and let it spill sideways over the ones
+   * next to it when the formula is longer than the column is wide.
+   *
+   * A formula is routinely wider than the cell holding it, and an editor
+   * clipped to the column scrolls its own text out of sight the moment the
+   * caret reaches the end — you end up typing into a keyhole. The width comes
+   * from `scrollWidth` rather than from a character count, so it is the
+   * browser's own measurement of the text actually in the box.
+   */
   private positionEditor(): void {
     if (this.editing === null) return;
+
     const rect = this.grid.rectOf(this.editing.coord);
     const style = this.el.cellInput.style;
     style.left = `${rect.left}px`;
     style.top = `${rect.top}px`;
-    style.width = `${Math.max(rect.width, 120)}px`;
     style.height = `${rect.height}px`;
+    style.width = `${rect.width}px`;
+
+    const room = this.grid.viewport.width - 8;
+    const needed = this.el.cellInput.scrollWidth + 24;
+    style.width = `${Math.min(Math.max(rect.width, needed), room)}px`;
   }
 
   /** Write the edit into the sheet. Returns false when the formula is bad. */
@@ -353,6 +373,9 @@ export class App {
     for (const [col, width] of Object.entries(SAMPLE_WIDTHS)) {
       this.cols.resize(Number(col), width);
     }
+    for (const [name, target] of Object.entries(SAMPLE_NAMES)) {
+      this.workbook.defineName(name, target);
+    }
     this.workbook.setCells({ ...SAMPLE_SHEET, ...sampleFormulas() });
 
     this.el.sheetName.textContent = "project appraisal";
@@ -363,6 +386,9 @@ export class App {
   }
 
   private clearSheet(): void {
+    for (const entry of this.workbook.names()) {
+      this.workbook.deleteName(entry.name);
+    }
     this.workbook.setCells(
       Object.fromEntries(
         Object.keys(this.workbook.toInputMap()).map((address) => [address, null]),
@@ -522,6 +548,7 @@ export class App {
       this.editing.host = host;
       const mirror = host === "cell" ? this.el.formulaInput : this.el.cellInput;
       mirror.value = input.value;
+      this.positionEditor();
       this.refreshHighlight(input.value);
     };
 

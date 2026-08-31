@@ -91,6 +91,14 @@ export class Inspector {
       ),
     );
 
+    // A named range appears in "Reads" as the cells it expanded to, which is
+    // the truth about the graph but not the truth about the formula. Naming
+    // the names as well is what connects the two.
+    const used = namesUsedBy(workbook, formula ?? input);
+    if (used.length > 0) {
+      parts.push(field("Through", used.join("<br>")));
+    }
+
     const dependents = workbook.dependentsOf(address);
     parts.push(
       field(
@@ -106,6 +114,21 @@ export class Inspector {
 
     this.el.body.innerHTML = parts.join("");
   }
+}
+
+/** Defined names the formula text mentions, with what each stands for. */
+function namesUsedBy(workbook: Workbook, formula: string): string[] {
+  if (!formula.startsWith("=")) return [];
+
+  return workbook
+    .names()
+    .filter((entry) => new RegExp(`\\b${entry.name}\\b`, "i").test(formula))
+    .map(
+      (entry) =>
+        `${escape(entry.name)} <span class="field__value--muted">${escape(
+          entry.target,
+        )}</span>`,
+    );
 }
 
 function field(label: string, value: string, extra = ""): string {

@@ -18,7 +18,8 @@ formula depends on, and recalculates only what an edit actually invalidated.
 Phases 1–6 of [ROADMAP.md](ROADMAP.md) are complete: the formula grammar, the
 reference model, the dependency graph, the evaluator, a function library of 97
 functions including a financial pack, and a web interface with a virtualised
-grid. CSV interchange has landed; named ranges and benchmarks remain.
+grid, CSV interchange, named ranges and a benchmark harness. Every phase in the
+roadmap is complete.
 
 ## Using it as a library
 
@@ -43,6 +44,10 @@ book.setCell("B1", 500);    // four dependent cells recompute, nothing else
 book.getValue("B12");       // "loss-making"
 book.precedentsOf("B9");    // ["B8", "B4"]
 book.recalculationOrder("B1"); // ["B1", "B6", "B8", "B9", "B12"]
+
+book.defineName("Volume", "B1");
+book.setCell("B14", "=Volume*2");   // 1000
+book.setCell("B1", 700);            // 1400 - the name follows the cell
 ```
 
 ## Using it from the browser
@@ -84,7 +89,8 @@ recalc> B10
 ```
 
 `.help` lists the commands: `.list`, `.show A1:C9`, `.prec`, `.deps`, `.plan`,
-`.cycles`, `.fns`, `.help FN`, `.demo`, `.clear`, `.reset`, and for CSV
+`.cycles`, `.fns`, `.help FN`, `.demo`, `.clear`, `.reset`; for names
+`.name Revenue = B2:B13`, `.names`, `.unname Revenue`; and for CSV
 `.csv [formulas]`, `.import data.csv [A1]`, `.export out.csv [formulas]`.
 
 ## Install and run
@@ -97,6 +103,7 @@ npm run build     # emits dist/
 npm run build:web # emits web/dist/
 npm run repl      # interactive shell
 npm run web       # dev server for the grid
+npm run bench     # recalculation measurements
 ```
 
 ## Design decisions that mattered
@@ -155,6 +162,18 @@ worked examples rather than against their own output:
   values around 100,000,000 with a spread of 1, where the one-pass formula
   collapses.
 
+**A named range is expanded into the graph, not resolved at evaluation time.**
+If `Revenue` is `B2:B13`, then editing `B7` has to recalculate everything that
+mentions `Revenue`, even though nothing mentions `B7`. Resolving the name only
+when the formula runs would leave no edge for the invalidation to travel along,
+and the total on screen would be silently stale — the worst kind of spreadsheet
+bug, because nothing about it looks wrong. So the name is expanded when the
+formula is stored. The other direction needs its own bookkeeping: redefining a
+name has to reach its users, and they are not reachable through the graph
+either, since the graph holds what the name resolved *to* and not the name
+itself. A separate name-to-users index keeps that cost proportional to the
+users rather than to the sheet.
+
 **CSV is scanned, not split.** `line.split(",")` is wrong on the first field
 containing a comma and `text.split("\n")` is wrong on the first field containing
 a newline, which in exported spreadsheet data is roughly every other file. The
@@ -187,17 +206,42 @@ which is enough to make the one decision that matters — a word followed by `(`
 a function, so `LOG10(100)` colours as a call while `LOG10` alone colours as the
 cell it addresses.
 
+## Measured cost
+
+`npm run bench` prints the recalculation measurements. The numbers below are
+from one run on an ordinary machine; the shape is what matters, not the
+absolute values.
+
+```
+shape                            cells  build ms  edit ms  recalculated
+chain of 5000                    5,000      51.3     14.4         5,000
+fan-out to 5000                  5,001      41.6     11.6         5,000
+3 aggregates over 10000         10,003      91.5    6.018             3
+3 named aggregates over 10000   10,003     109.7    7.196             3
+isolated edit in 2000 cells      2,001      22.5    0.006             0
+isolated edit in 20000 cells    20,001     216.3    0.005             0
+isolated edit in 100000 cells  100,001    1500.6    0.007             0
+```
+
+The last three rows are the design claim under test: an edit whose cell has no
+dependents costs the same in a 100,000-cell sheet as in a 2,000-cell one. Going
+through a named range rather than a written-out one costs about a fifth more on
+this workload, which is the price of the extra indirection at definition time.
+
 ## Known gaps
 
-- No CI is configured, so the suite runs locally only.
+- No CI is configured, so the suite and the benchmark run locally only.
 - Implicit intersection is not implemented: a multi-cell range in a scalar
   position is `#VALUE!` rather than a silent pick from the calling row.
 - Omitted arguments (`IF(A1,,2)`) are a parse error.
 - Only one sheet; there are no cross-sheet references.
-- No named ranges: a bare word in a formula resolves only to a named constant.
 - No number formats: the grid shows the general format only, so a rate reads as
   `0.1356486793` rather than `13.56%`.
-- The grid has no undo, no clipboard and no fill handle.
+- The grid has no undo, no clipboard and no fill handle, and names can only be
+  defined from the library or the shell, not from the grid.
+- Reference highlighting outlines only references written out in the formula.
+  A name is underlined in the formula bar and resolved in the inspector, but
+  the cells behind it are not outlined on the grid.
 
 ## License
 

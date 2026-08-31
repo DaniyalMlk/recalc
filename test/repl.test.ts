@@ -279,3 +279,60 @@ describe("CSV commands", () => {
     expect(session.handle(".export ")).toContain("usage");
   });
 });
+
+describe("name commands", () => {
+  const sheet = ["B2 = 100", "B3 = 250", "B4 = 400"];
+
+  it("names a range and aggregates it", () => {
+    expect(
+      one("D1 = =SUM(Revenue)", [...sheet, ".name Revenue = B2:B4"]),
+    ).toContain("750");
+  });
+
+  it("names a constant when the target is not a reference", () => {
+    expect(one("A1 = =Rate*100", [".name Rate = 0.11"])).toContain("11");
+  });
+
+  it("stores a text constant", () => {
+    expect(one(".name Label = growth")).toContain("(value)");
+  });
+
+  it("lists what is defined", () => {
+    const out = one(".names", [".name Rate = 0.11", ".name Revenue = B2:B4"]);
+    expect(out).toContain("RATE");
+    expect(out).toContain("REVENUE");
+    expect(out).toContain("B2:B4");
+  });
+
+  it("says so when nothing is named", () => {
+    expect(one(".names")).toContain("no names defined");
+  });
+
+  it("recalculates a user when the target changes", () => {
+    const before = [...sheet, ".name Revenue = B2:B4", "D1 = =SUM(Revenue)"];
+    expect(one("D1", [...before, ".name Revenue = B2:B3"])).toContain("350");
+  });
+
+  it("recalculates a user when a cell inside the range changes", () => {
+    const before = [...sheet, ".name Revenue = B2:B4", "D1 = =SUM(Revenue)"];
+    expect(one("D1", [...before, "B3 = 1250"])).toContain("1750");
+  });
+
+  it("removes a name and leaves its users with #NAME?", () => {
+    const before = [...sheet, ".name Revenue = B2:B4", "D1 = =SUM(Revenue)"];
+    expect(one(".unname Revenue", before)).toContain("removed REVENUE");
+    expect(one("D1", [...before, ".unname Revenue"])).toContain("#NAME?");
+  });
+
+  it("reports removing a name that does not exist", () => {
+    expect(one(".unname Nope")).toContain("no name called");
+  });
+
+  it("refuses a name that reads as a cell reference", () => {
+    expect(one(".name A1 = B2")).toContain("cell reference");
+  });
+
+  it("reports usage for a malformed definition", () => {
+    expect(one(".name broken")).toContain("usage");
+  });
+});

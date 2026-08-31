@@ -60,15 +60,28 @@ export const SAMPLE_SHEET: Record<string, string> = {
 
   A15: "Net present value",
   // The first flow is already at time zero, so it sits outside the discounting.
-  B15: "=NPV($B$3,G8:G13)+G7",
+  B15: "=NPV(DiscountRate,G8:G13)+G7",
   A16: "Internal rate of return",
-  B16: "=IRR(G7:G13)",
+  B16: "=IRR(CashFlow)",
   A17: "Undiscounted total",
-  B17: "=SUM(G7:G13)",
+  B17: "=SUM(CashFlow)",
   A18: "Peak funding need",
-  B18: "=MIN(G7:G13)",
+  B18: "=MIN(CashFlow)",
   A19: "Payback achieved",
   B19: '=IF(B17>0,"yes","no")',
+};
+
+/**
+ * Names the example defines.
+ *
+ * They are not decoration: `SUM(CashFlow)` has to recalculate when a cell
+ * inside `G7:G13` changes, even though nothing in that formula names the cell.
+ * The example is where that behaviour is visible.
+ */
+export const SAMPLE_NAMES: Record<string, string> = {
+  DiscountRate: "B3",
+  TaxRate: "B4",
+  CashFlow: "G7:G13",
 };
 
 /** Formula columns, filled down over the seven project years. */
@@ -76,7 +89,7 @@ export function sampleFormulas(): Record<string, string> {
   const cells: Record<string, string> = {};
   for (let row = 7; row <= 13; row += 1) {
     cells[`D${row}`] = `=B${row}-C${row}`;
-    cells[`E${row}`] = `=MAX(0,D${row}*$B$4)`;
+    cells[`E${row}`] = `=MAX(0,D${row}*TaxRate)`;
     cells[`G${row}`] = `=D${row}-E${row}-F${row}`;
   }
   return cells;

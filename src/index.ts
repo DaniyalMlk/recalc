@@ -4,6 +4,7 @@ export * from "./engine/evaluator.js";
 export * from "./engine/graph.js";
 export * from "./engine/grid.js";
 export * from "./engine/lexer.js";
+export * from "./engine/names.js";
 export * from "./engine/parser.js";
 export * from "./engine/precedents.js";
 export * from "./engine/printer.js";
