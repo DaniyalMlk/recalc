@@ -239,6 +239,9 @@ this workload, which is the price of the extra indirection at definition time.
   `0.1356486793` rather than `13.56%`.
 - The grid has no undo, no clipboard and no fill handle, and names can only be
   defined from the library or the shell, not from the grid.
+- Reference highlighting outlines only references written out in the formula.
+  A name is underlined in the formula bar and resolved in the inspector, but
+  the cells behind it are not outlined on the grid.
 
 ## License
 
