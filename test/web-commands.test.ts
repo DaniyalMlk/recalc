@@ -8,7 +8,11 @@ import {
   rowCommands,
   rowCount,
 } from "../web/src/core/commands.js";
-import type { CommandContext } from "../web/src/core/commands.js";
+import type {
+  Command,
+  CommandContext,
+  CommandId,
+} from "../web/src/core/commands.js";
 import type { CellRect } from "../web/src/core/selection.js";
 
 const rect = (
@@ -30,7 +34,7 @@ const context = (over: Partial<CommandContext> = {}): CommandContext => ({
   ...over,
 });
 
-const find = (list: { id: string }[], id: string) =>
+const find = (list: readonly Command[], id: CommandId): Command =>
   list.find((command) => command.id === id)!;
 
 describe("counting a selection", () => {
