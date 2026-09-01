@@ -60,12 +60,12 @@ tree green and the public API usable.
 
 ## Phase 8 — Structural editing
 
-- [ ] Insert and delete rows and columns, with a count
-- [ ] Reference rewriting across the sheet, shifting what survives
-- [ ] Range adjustment for edits that land inside, above or across a range
-- [ ] `#REF!` for references whose target no longer exists
-- [ ] Named ranges adjusted alongside the formulas
-- [ ] Shell commands for structural edits
+- [x] Insert and delete rows and columns, with a count
+- [x] Reference rewriting across the sheet, shifting what survives
+- [x] Range adjustment for edits that land inside, above or across a range
+- [x] `#REF!` for references whose target no longer exists
+- [x] Named ranges adjusted alongside the formulas
+- [x] Shell commands for structural edits
 
 ## Phase 9 — Fill, clipboard and history
 

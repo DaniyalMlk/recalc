@@ -15,11 +15,11 @@ formula depends on, and recalculates only what an edit actually invalidated.
 
 ## Status
 
-Phases 1–6 of [ROADMAP.md](ROADMAP.md) are complete: the formula grammar, the
+Phases 1–8 of [ROADMAP.md](ROADMAP.md) are complete: the formula grammar, the
 reference model, the dependency graph, the evaluator, a function library of 97
-functions including a financial pack, and a web interface with a virtualised
-grid, CSV interchange, named ranges and a benchmark harness. Every phase in the
-roadmap is complete.
+functions including a financial pack, a web interface with a virtualised grid,
+CSV interchange, named ranges, a benchmark harness, and structural editing that
+rewrites every formula in the sheet when rows and columns move.
 
 ## Using it as a library
 
@@ -48,6 +48,14 @@ book.recalculationOrder("B1"); // ["B1", "B6", "B8", "B9", "B12"]
 book.defineName("Volume", "B1");
 book.setCell("B14", "=Volume*2");   // 1000
 book.setCell("B1", 700);            // 1400 - the name follows the cell
+
+book.insertRows(0, 1);      // a blank row 1; everything below shifts down
+book.getInput("B10");       // "=B9-B5" - the formula followed its inputs
+book.names()[0].target;     // "B2" - so did the name
+
+book.deleteRows(1, 1);      // delete the row the unit count was on
+book.getInput("B6");        // "=#REF!*B2" - there is nothing left to read
+book.names()[0].target;     // "#REF!" - and the name says so too
 ```
 
 ## Using it from the browser
@@ -90,8 +98,10 @@ recalc> B10
 
 `.help` lists the commands: `.list`, `.show A1:C9`, `.prec`, `.deps`, `.plan`,
 `.cycles`, `.fns`, `.help FN`, `.demo`, `.clear`, `.reset`; for names
-`.name Revenue = B2:B13`, `.names`, `.unname Revenue`; and for CSV
-`.csv [formulas]`, `.import data.csv [A1]`, `.export out.csv [formulas]`.
+`.name Revenue = B2:B13`, `.names`, `.unname Revenue`; for rows and columns
+`.insertrow 3 [n]`, `.deleterow 3 [n]`, `.insertcol C [n]`, `.deletecol C [n]`;
+and for CSV `.csv [formulas]`, `.import data.csv [A1]`,
+`.export out.csv [formulas]`.
 
 ## Install and run
 
@@ -173,6 +183,26 @@ name has to reach its users, and they are not reachable through the graph
 either, since the graph holds what the name resolved *to* and not the name
 itself. A separate name-to-users index keeps that cost proportional to the
 users rather than to the sheet.
+
+**A structural edit rewrites formulas, and says so when it cannot.** Inserting a
+row moves cells, which is the easy half; the other half is that every formula in
+the sheet is written in terms of positions that just changed. A reference whose
+target survives is shifted, but a reference whose target was deleted has no
+honest answer left, so it becomes `#REF!` rather than quietly pointing at
+whatever slid into that address. The range rules follow from treating a range as
+a span rather than two independent corners: an insert inside a span stretches
+it, a delete inside shortens it, and an end that was itself deleted collapses
+onto the surviving line beside it — the start onto the first line after the
+hole, the end onto the last line before it. A span that was entirely deleted
+then comes out inverted, which is how "nothing is left" is detected without a
+special case for it.
+
+**Only the formulas that moved are reprinted.** The rewrite returns the
+identical syntax tree when nothing inside it changed, and the workbook uses that
+identity to decide whether to touch the cell's stored text at all. It is the
+difference between a sheet that survives a hundred row inserts with its formulas
+still spelled the way they were typed, and one where an unrelated edit silently
+reformats `=A1 + A2` into `=A1+A2` everywhere.
 
 **CSV is scanned, not split.** `line.split(",")` is wrong on the first field
 containing a comma and `text.split("\n")` is wrong on the first field containing
