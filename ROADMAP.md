@@ -57,3 +57,27 @@ tree green and the public API usable.
 - [x] Named ranges, expanded into the dependency graph
 - [x] Benchmark harness over large dependency chains
 - [x] Recalculation profiling and hot-path tuning
+
+## Phase 8 — Structural editing
+
+- [ ] Insert and delete rows and columns, with a count
+- [ ] Reference rewriting across the sheet, shifting what survives
+- [ ] Range adjustment for edits that land inside, above or across a range
+- [ ] `#REF!` for references whose target no longer exists
+- [ ] Named ranges adjusted alongside the formulas
+- [ ] Shell commands for structural edits
+
+## Phase 9 — Fill, clipboard and history
+
+- [ ] Fill down and fill across, translating relative references
+- [ ] Copy a block and paste it anywhere, with the same translation
+- [ ] Clear a block in one operation
+- [ ] An edit journal with undo and redo
+- [ ] Shell commands for filling, copying and undoing
+
+## Phase 10 — Editing in the grid
+
+- [ ] Row and column insertion and deletion from the headers
+- [ ] Fill and clipboard shortcuts on a selected block
+- [ ] Undo and redo wired to the keyboard
+- [ ] The toolbar reflects what the current selection can do
