@@ -108,6 +108,21 @@ export class DependencyGraph {
     }
   }
 
+  /**
+   * Drop every edge in the graph.
+   *
+   * A structural edit moves most of the sheet at once, so rebuilding the graph
+   * wholesale is both simpler and cheaper than unpicking each edge: the edit is
+   * already linear in the number of cells because every one of them may have
+   * to move.
+   */
+  clear(): void {
+    this.precedents.clear();
+    this.dependents.clear();
+    this.rangesRead.clear();
+    this.rangeSubscriptions.clear();
+  }
+
   private addDependent(precedentId: CellId, dependentId: CellId): void {
     const set = this.dependents.get(precedentId);
     if (set === undefined) {

@@ -1,5 +1,14 @@
-import { ReferenceError_, normalizeRange, parseA1 } from "./reference.js";
+import { REF_ERROR } from "./errors.js";
+import {
+  ReferenceError_,
+  formatA1,
+  formatRange,
+  normalizeRange,
+  parseA1,
+} from "./reference.js";
 import type { CellRef, RangeRef } from "./reference.js";
+import { adjustRange, adjustRef } from "./structure.js";
+import type { StructuralEdit } from "./structure.js";
 import type { Value } from "./value.js";
 
 /**
@@ -159,6 +168,66 @@ export class NameTable {
 
   clear(): void {
     this.entries.clear();
+  }
+
+  /**
+   * Move every name that points at part of the sheet through one structural
+   * edit, and report which ones moved.
+   *
+   * A name is a reference with a label on it, so it has to follow the rows and
+   * columns exactly as a written-out reference does. A name whose entire target
+   * is deleted keeps its label and becomes `#REF!` rather than disappearing:
+   * the formulas that mention it would otherwise turn into `#NAME?`, which
+   * says the name was never defined when in fact its target was destroyed.
+   */
+  adjust(edit: StructuralEdit): string[] {
+    const moved: string[] = [];
+    for (const [key, entry] of this.entries) {
+      const { binding } = entry;
+      if (binding.kind === "value") continue;
+
+      if (binding.kind === "cell") {
+        const ref = adjustRef(binding.ref, edit);
+        if (ref === null) {
+          this.entries.set(key, {
+            name: key,
+            binding: { kind: "value", value: REF_ERROR },
+            target: "#REF!",
+          });
+          moved.push(key);
+          continue;
+        }
+        if (ref.col === binding.ref.col && ref.row === binding.ref.row) continue;
+        this.entries.set(key, {
+          name: key,
+          binding: { kind: "cell", ref },
+          target: formatA1(ref),
+        });
+        moved.push(key);
+        continue;
+      }
+
+      const range = adjustRange(binding.range, edit);
+      if (range === null) {
+        this.entries.set(key, {
+          name: key,
+          binding: { kind: "value", value: REF_ERROR },
+          target: "#REF!",
+        });
+        moved.push(key);
+        continue;
+      }
+      const before = formatRange(binding.range);
+      const after = formatRange(range);
+      if (before === after) continue;
+      this.entries.set(key, {
+        name: key,
+        binding: { kind: "range", range },
+        target: after,
+      });
+      moved.push(key);
+    }
+    return moved;
   }
 
   /** Every name, sorted, for listing in a UI. */
