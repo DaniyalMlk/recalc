@@ -402,3 +402,85 @@ describe("rows and columns", () => {
     expect(help).toContain(".deletecol");
   });
 });
+
+describe("blocks, clipboard and history", () => {
+  const sheet = ["A1 = 1", "A2 = 2", "A3 = 3", "B1 = =A1*2"];
+
+  it("fills a block down and translates the formula", () => {
+    expect(one(".filldown B1:B3", sheet)).toContain("filled B1:B3");
+    expect(one("B3", [...sheet, ".filldown B1:B3"])).toContain("=A3*2");
+  });
+
+  it("fills a block across", () => {
+    const before = ["A1 = 5", "B1 = 6", "A2 = =A1*10"];
+    expect(one("B2", [...before, ".fillright A2:B2"])).toContain("=B1*10");
+  });
+
+  it("copies a block and pastes it with translation", () => {
+    const script = [...sheet, ".filldown B1:B3", ".copy B1:B3", ".paste D1"];
+    expect(one(".copy B1:B3", [...sheet])).toContain("copied 1x3");
+    expect(one("D3", script)).toContain("=C3*2");
+  });
+
+  it("refuses to paste with an empty clipboard", () => {
+    expect(one(".paste D1", sheet)).toContain("nothing copied");
+  });
+
+  it("clears a whole block", () => {
+    expect(one(".clear A1:B3", sheet)).toContain("cleared A1:B3");
+    expect(one(".list", [...sheet, ".clear A1:B3"])).toContain("empty sheet");
+  });
+
+  it("still clears a single cell", () => {
+    expect(one(".clear A1", sheet)).toContain("cleared A1");
+  });
+
+  it("undoes the last edit and says what it undid", () => {
+    expect(one(".undo", sheet)).toContain("edit B1");
+    expect(one("B1", [...sheet, ".undo"])).toContain("(blank)");
+  });
+
+  it("redoes an undone edit", () => {
+    expect(one(".redo", [...sheet, ".undo"])).toContain("edit B1");
+    expect(one("B1", [...sheet, ".undo", ".redo"])).toContain("=A1*2");
+  });
+
+  it("reports when there is nothing to undo or redo", () => {
+    expect(one(".undo")).toContain("nothing to undo");
+    expect(one(".redo")).toContain("nothing to redo");
+  });
+
+  it("undoes a fill as one operation", () => {
+    const before = [...sheet, ".filldown B1:B3", ".undo"];
+    expect(one("B3", before)).toContain("(blank)");
+    expect(one("B1", before)).toContain("=A1*2");
+  });
+
+  it("undoes a row insertion", () => {
+    const before = [...sheet, ".insertrow 2", ".undo"];
+    expect(one("A2", before)).toContain("2");
+  });
+
+  it("rejects a malformed block", () => {
+    expect(one(".filldown zz")).toContain("not a block");
+    expect(one(".clear 99")).toContain("not a cell or block");
+  });
+
+  it("reports usage for a missing argument", () => {
+    expect(one(".filldown")).toContain("usage");
+    expect(one(".copy")).toContain("usage");
+    expect(one(".paste nope", [".copy A1"])).toContain("usage");
+  });
+
+  it("lists the block commands in the help text", () => {
+    const help = one(".help");
+    expect(help).toContain(".filldown");
+    expect(help).toContain(".undo");
+  });
+
+  it("forgets the clipboard when the sheet is reset", () => {
+    expect(one(".paste D1", [...sheet, ".copy B1", ".reset"])).toContain(
+      "nothing copied",
+    );
+  });
+});
