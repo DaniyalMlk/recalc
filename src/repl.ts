@@ -1,11 +1,14 @@
 import { Workbook, interpretInput } from "./engine/workbook.js";
+import type { Clipboard } from "./engine/workbook.js";
 import {
   MAX_ROWS,
   formatA1,
+  ReferenceError_,
   formatRange,
   iterateRange,
   labelToColumn,
   parseA1,
+  parseA1Range,
 } from "./engine/reference.js";
 import { StructureError } from "./engine/structure.js";
 import type { Axis, StructuralOperation } from "./engine/structure.js";
@@ -48,7 +51,7 @@ export const HELP = `
     .fns [prefix]           registered functions
     .help FN                one function's signature
     .demo                   load a small discounted cash flow model
-    .clear A1               empty a cell
+    .clear A1               empty a cell, or .clear A1:C9 a block
     .reset                  start an empty sheet
     .quit
 
@@ -57,6 +60,13 @@ export const HELP = `
     .name Rate = 0.11       name a constant
     .names                  every defined name
     .unname Revenue         remove a name
+
+  ${paint(BOLD, "Blocks")}
+    .filldown B1:B9         copy the first row of the block down
+    .fillright B2:F2        copy the first column of the block across
+    .copy A1:C3             take a copy of a block
+    .paste D5               paste it, with references translated
+    .undo / .redo           step back and forward through the edits
 
   ${paint(BOLD, "Rows and columns")}
     .insertrow 3 [n]        open n blank rows above row 3
@@ -158,6 +168,14 @@ function listCells(book: Workbook): string[] {
 export class ReplSession {
   private book = new Workbook();
 
+  /**
+   * The copied block, if there is one.
+   *
+   * It belongs to the session rather than the workbook: a clipboard outlives
+   * the sheet it was taken from, which is the whole reason it stores text.
+   */
+  private clipboard: Clipboard | null = null;
+
   /** Signals that the caller should exit; `handle` never exits by itself. */
   static readonly QUIT = Symbol("quit");
 
@@ -173,10 +191,23 @@ export class ReplSession {
       this.book,
       () => {
         this.book = new Workbook();
+        this.clipboard = null;
       },
       this.files,
+      {
+        get: () => this.clipboard,
+        set: (clipboard) => {
+          this.clipboard = clipboard;
+        },
+      },
     );
   }
+}
+
+/** The session's clipboard slot, handed to the command handler. */
+export interface ClipboardSlot {
+  get(): Clipboard | null;
+  set(clipboard: Clipboard): void;
 }
 
 const STRUCTURAL_COMMANDS: readonly [string, Axis, StructuralOperation][] = [
@@ -245,6 +276,22 @@ function structuralEdit(
     : `  ${count} ${noun} deleted from ${label}`;
 }
 
+/**
+ * Read a block argument, accepting a single address as a one-cell block.
+ *
+ * Returns null rather than throwing so the caller can answer with a message
+ * instead of a stack trace: a mistyped address is a normal thing to do at a
+ * prompt, not a programmer error.
+ */
+function readBlock(text: string) {
+  try {
+    return parseA1Range(text);
+  } catch (error) {
+    if (error instanceof ReferenceError_) return null;
+    throw error;
+  }
+}
+
 /** Split a command tail into its whitespace-separated arguments. */
 function splitArgs(tail: string): (string | undefined)[] {
   return tail.trim().split(/\s+/).filter((part) => part !== "");
@@ -255,6 +302,7 @@ function handle(
   book: Workbook,
   reset: () => void,
   files: FileAccess | null = null,
+  clipboard: ClipboardSlot | null = null,
 ): string | typeof ReplSession.QUIT | null {
   if (line === ".quit" || line === ".exit") {
     return ReplSession.QUIT;
@@ -337,9 +385,54 @@ function handle(
   }
 
   if (line.startsWith(".clear ")) {
-    const address = line.slice(7).trim();
-    book.clearCell(address);
-    return `  cleared ${address}`;
+    const target = line.slice(7).trim();
+    const range = readBlock(target);
+    if (range === null) return paint(RED, `  ${target} is not a cell or block`);
+    book.clearBlock(range);
+    return `  cleared ${formatRange(range)}`;
+  }
+
+  if (line === ".undo" || line === ".redo") {
+    const label = line === ".undo" ? book.undoLabel : book.redoLabel;
+    const done = line === ".undo" ? book.undo() : book.redo();
+    if (!done) {
+      return paint(DIM, `  nothing to ${line === ".undo" ? "undo" : "redo"}`);
+    }
+    return `  ${line === ".undo" ? "undid" : "redid"} ${label ?? "the last edit"}`;
+  }
+
+  for (const [command, fill] of [
+    [".filldown", (block: string) => book.fillDown(block)],
+    [".fillright", (block: string) => book.fillRight(block)],
+  ] as const) {
+    if (line !== command && !line.startsWith(`${command} `)) continue;
+    const target = line.slice(command.length).trim();
+    if (target === "") return paint(RED, `  usage: ${command} B1:B9`);
+    const range = readBlock(target);
+    if (range === null) return paint(RED, `  ${target} is not a block`);
+    fill(formatRange(range));
+    return `  filled ${formatRange(range)}`;
+  }
+
+  if (line === ".copy" || line.startsWith(".copy ")) {
+    if (clipboard === null) return paint(RED, "  no clipboard in this session");
+    const target = line.slice(5).trim();
+    if (target === "") return paint(RED, "  usage: .copy A1:C3");
+    const range = readBlock(target);
+    if (range === null) return paint(RED, `  ${target} is not a block`);
+    const copied = book.copy(range);
+    clipboard.set(copied);
+    return `  copied ${copied.width}x${copied.height} from ${formatRange(range)}`;
+  }
+
+  if (line === ".paste" || line.startsWith(".paste ")) {
+    if (clipboard === null) return paint(RED, "  no clipboard in this session");
+    const held = clipboard.get();
+    if (held === null) return paint(DIM, "  nothing copied yet");
+    const target = line.slice(6).trim();
+    if (!ADDRESS.test(target)) return paint(RED, "  usage: .paste D5");
+    book.paste(held, target);
+    return `  pasted ${held.width}x${held.height} at ${target.toUpperCase()}`;
   }
 
   if (line === ".names") {
