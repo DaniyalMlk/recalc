@@ -170,6 +170,12 @@ export class NameTable {
     this.entries.clear();
   }
 
+  /** Replace the whole table, for restoring a recorded state. */
+  restore(entries: readonly NameEntry[]): void {
+    this.entries.clear();
+    for (const entry of entries) this.entries.set(entry.name, entry);
+  }
+
   /**
    * Move every name that points at part of the sheet through one structural
    * edit, and report which ones moved.
