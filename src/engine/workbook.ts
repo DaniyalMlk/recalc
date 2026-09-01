@@ -22,6 +22,8 @@ import {
   parseCellKey,
 } from "./reference.js";
 import type { CellRef, Coord, RangeRef } from "./reference.js";
+import { adjustAst, adjustCoord, validateEdit } from "./structure.js";
+import type { StructuralEdit } from "./structure.js";
 import { formatValue, parseNumericText } from "./value.js";
 import type { Value } from "./value.js";
 
@@ -161,6 +163,82 @@ export class Workbook {
     this.cells.delete(coord);
     this.writePrecedents(coord, null);
     this.recalculateFrom([coord]);
+  }
+
+  /**
+   * Insert blank rows above `at`, pushing everything below them down.
+   *
+   * `at` is zero-based, so `insertRows(0)` puts a row above row 1.
+   */
+  insertRows(at: number, count = 1): void {
+    this.applyStructuralEdit({ axis: "row", operation: "insert", at, count });
+  }
+
+  /** Delete `count` rows starting at `at`, pulling everything below them up. */
+  deleteRows(at: number, count = 1): void {
+    this.applyStructuralEdit({ axis: "row", operation: "delete", at, count });
+  }
+
+  /** Insert blank columns to the left of `at`. */
+  insertColumns(at: number, count = 1): void {
+    this.applyStructuralEdit({ axis: "column", operation: "insert", at, count });
+  }
+
+  /** Delete `count` columns starting at `at`. */
+  deleteColumns(at: number, count = 1): void {
+    this.applyStructuralEdit({ axis: "column", operation: "delete", at, count });
+  }
+
+  /**
+   * Move the sheet through one structural edit.
+   *
+   * Three things move at once and all three have to agree afterwards: the
+   * cells, the formulas written in terms of where those cells were, and the
+   * names pointing at them. The graph is rebuilt from scratch rather than
+   * patched, because an edit on one axis can move every cell in the sheet, so
+   * there is no smaller set of edges to repair.
+   *
+   * A formula is only reprinted when a reference inside it actually moved.
+   * `adjustAst` returns the identical tree when nothing changed, which is how a
+   * sheet survives a hundred structural edits with the untouched formulas still
+   * spelled the way they were typed.
+   */
+  applyStructuralEdit(edit: StructuralEdit): void {
+    validateEdit(edit);
+
+    const moved: [Coord, CellRecord][] = [];
+    for (const [coord, record] of this.cells.entries()) {
+      const target = adjustCoord(coord, edit);
+      // A cell pushed past the last row or column of the sheet has nowhere to
+      // go, so the insert drops it rather than silently keeping two cells at
+      // the same address.
+      if (target === null) continue;
+
+      let ast = record.ast;
+      let input = record.input;
+      if (record.ast !== null) {
+        const rewritten = adjustAst(record.ast, edit);
+        if (rewritten !== record.ast) {
+          ast = rewritten;
+          input = printFormula(rewritten, true);
+        }
+      }
+
+      moved.push([
+        target,
+        { input, ast, literal: record.literal, value: record.literal },
+      ]);
+    }
+
+    this.cells.clear();
+    this.graph.clear();
+    this.nameUsers.clear();
+    this.nameTable.adjust(edit);
+
+    for (const [coord, record] of moved) this.cells.set(coord, record);
+    for (const [coord, record] of moved) this.writePrecedents(coord, record.ast);
+
+    this.recalculateAll();
   }
 
   /** Define a named constant, usable as a bare word in formulas. */
