@@ -191,6 +191,51 @@ body {
   cursor: default;
 }
 
+.button:disabled:active {
+  transform: none;
+}
+
+/*
+ * Undo and redo read as one control, so they share a border rather than
+ * sitting as two separate buttons a few pixels apart.
+ */
+.buttongroup {
+  display: inline-flex;
+}
+
+.buttongroup .button:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.buttongroup .button + .button {
+  margin-left: -1px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.buttongroup .button:hover,
+.buttongroup .button:focus-visible {
+  /* Lift the hovered half so its border is not painted over by its neighbour. */
+  position: relative;
+  z-index: 1;
+}
+
+.button--icon {
+  padding: 5px 9px;
+  line-height: 0;
+}
+
+.button--icon svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+.button--icon:disabled svg {
+  opacity: 0.45;
+}
+
 /* --------------------------------------------------------- formula bar -- */
 
 .formulabar {
@@ -437,6 +482,17 @@ body {
   border-bottom: 1px solid var(--rule);
 }
 
+.head--col,
+.head--row {
+  cursor: cell;
+}
+
+.head--col:hover,
+.head--row:hover {
+  color: var(--ink-soft);
+  background: var(--panel-deep);
+}
+
 .head.is-active {
   color: var(--accent);
   background: var(--accent-soft);
@@ -529,6 +585,18 @@ body {
 
 .mark--active {
   border: 2px solid var(--accent);
+}
+
+/*
+ * The copied block. A dashed outline rather than the animated marching ants of
+ * a desktop spreadsheet: the outline can sit on screen for minutes at a time,
+ * and something that moves forever in the corner of the eye is a cost paid on
+ * every glance for information that does not change.
+ */
+.mark--copy {
+  border: 1.5px dashed var(--accent);
+  border-radius: 2px;
+  background: rgba(31, 95, 78, 0.04);
 }
 
 .mark--ref {
@@ -722,5 +790,85 @@ body {
 @media (prefers-reduced-motion: reduce) {
   * {
     transition-duration: 1ms !important;
+  }
+}
+
+/* --------------------------------------------------------- context menu -- */
+
+.menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 208px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-radius: 7px;
+  box-shadow:
+    0 1px 2px rgba(35, 33, 30, 0.06),
+    0 8px 24px rgba(35, 33, 30, 0.12);
+  opacity: 0;
+  transform: scale(0.96);
+  /*
+   * Opened by a right click, which is rare enough to earn an entrance. It
+   * scales from the pointer rather than from its own centre, so it reads as
+   * having come from the click instead of having been dropped on the page.
+   */
+  transition:
+    opacity 110ms var(--ease-out),
+    transform 110ms var(--ease-out);
+}
+
+.menu.is-open {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.menu__item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu__item:hover:not([disabled]) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.menu__item[disabled] {
+  color: var(--ink-mute);
+  cursor: default;
+}
+
+.menu__hint {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+}
+
+.menu__item:hover:not([disabled]) .menu__hint {
+  color: var(--accent);
+}
+
+.menu__rule {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--rule);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu {
+    transition: none;
   }
 }
