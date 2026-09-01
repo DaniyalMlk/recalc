@@ -7,13 +7,23 @@ import {
   parseA1,
 } from "../../../src/engine/reference.js";
 import type { Coord } from "../../../src/engine/reference.js";
+import { StructureError } from "../../../src/engine/structure.js";
 import { Workbook } from "../../../src/engine/workbook.js";
+import type { Clipboard } from "../../../src/engine/workbook.js";
 import { CsvError, exportCsv, importCsv } from "../../../src/io/csv.js";
+import {
+  columnCommands,
+  editCommands,
+  historyCommands,
+  rowCommands,
+} from "../core/commands.js";
+import type { Command, CommandContext, CommandId } from "../core/commands.js";
 import { charsForWidth, displayValue } from "../core/display.js";
 import { highlightFormula } from "../core/highlight.js";
 import type { Highlight } from "../core/highlight.js";
 import { AxisMetrics } from "../core/metrics.js";
 import { Selection } from "../core/selection.js";
+import { rectContains } from "../core/selection.js";
 import type { CellRect, Direction } from "../core/selection.js";
 import { pageStep } from "../core/viewport.js";
 import {
@@ -23,8 +33,9 @@ import {
   sampleFormulas,
 } from "../sample.js";
 import { GridView } from "./grid-view.js";
-import type { CellPaint } from "./grid-view.js";
+import type { CellPaint, MenuTarget } from "./grid-view.js";
 import { Inspector } from "./inspector.js";
+import { ContextMenu } from "./menu.js";
 
 /**
  * A working area big enough to be a real sheet and small enough that walking
@@ -34,6 +45,27 @@ import { Inspector } from "./inspector.js";
  */
 const SHEET_ROWS = Math.min(4096, MAX_ROWS);
 const SHEET_COLS = Math.min(64, MAX_COLUMNS);
+
+/**
+ * Modifier shortcuts, keyed by the lower-cased key.
+ *
+ * `z` covers redo too, through Shift, which is the convention everywhere
+ * except Windows-only applications that also bind Ctrl+Y.
+ */
+const SHORTCUTS: Record<string, CommandId> = {
+  c: "copy",
+  x: "cut",
+  v: "paste",
+  d: "fill-down",
+  r: "fill-right",
+  z: "undo",
+  y: "redo",
+};
+
+/** Whether to spell shortcuts with the Command symbol. */
+function isMac(): boolean {
+  return /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent);
+}
 
 const ARROWS: Record<string, Direction> = {
   ArrowUp: "up",
@@ -70,6 +102,8 @@ export interface AppElements {
   readonly sheetName: HTMLElement;
   readonly loadSample: HTMLButtonElement;
   readonly clearSheet: HTMLButtonElement;
+  readonly undo: HTMLButtonElement;
+  readonly redo: HTMLButtonElement;
   readonly importCsv: HTMLButtonElement;
   readonly exportCsv: HTMLButtonElement;
   readonly fileInput: HTMLInputElement;
@@ -88,10 +122,15 @@ export class App {
 
   private readonly grid: GridView;
   private readonly inspector: Inspector;
+  private readonly menu: ContextMenu;
 
   private editing: Editing | null = null;
   private highlight: Highlight | null = null;
   private lastRecalc = "";
+
+  /** The copied block, and where it came from, for the outline on the grid. */
+  private clipboard: Clipboard | null = null;
+  private copied: CellRect | null = null;
 
   constructor(private readonly el: AppElements) {
     this.grid = new GridView(
@@ -123,8 +162,12 @@ export class App {
           this.beginEdit(this.workbook.getInput(this.address(coord)), "cell");
         },
         onResize: () => this.positionEditor(),
+        onPickLine: (axis, index, extending) => this.pickLine(axis, index, extending),
+        onMenu: (target, x, y) => this.openMenu(target, x, y),
       },
     );
+
+    this.menu = new ContextMenu((id) => this.run(id));
 
     this.inspector = new Inspector(
       {
@@ -159,12 +202,21 @@ export class App {
     };
   }
 
-  private syncSelection(): void {
+  /**
+   * Redraw everything that follows the selection.
+   *
+   * `reveal` is the cell to scroll into view, and it is not always the focus.
+   * Extending with the arrow keys should follow the moving end, but selecting a
+   * whole row by its header puts the focus on column 64 — scrolling there would
+   * throw the sheet off the side of the screen for what the user experienced as
+   * a click on the row number.
+   */
+  private syncSelection(reveal: Coord = this.selection.focus): void {
     const active = this.selection.active;
     const address = this.address(active);
 
     this.grid.setSelection(this.selection.rect, active);
-    this.grid.reveal(this.selection.focus);
+    this.grid.reveal(reveal);
     this.el.addressBox.textContent = this.describeSelection(address);
 
     if (this.editing === null) {
@@ -174,6 +226,7 @@ export class App {
 
     this.inspector.render(this.workbook, active);
     this.updateStatus();
+    this.refreshToolbar();
   }
 
   private describeSelection(address: string): string {
@@ -354,13 +407,196 @@ export class App {
     }
   }
 
-  private clearSelection(): void {
-    const entries: Record<string, null> = {};
-    for (const coord of this.selection.cells()) entries[this.address(coord)] = null;
-    this.workbook.setCells(entries);
-    this.lastRecalc = "cleared";
-    this.grid.refresh();
+  // ------------------------------------------------------- block commands --
+
+  /** The selection as an `A1:C9` block, which is what the workbook takes. */
+  private selectedBlock(): string {
+    const rect = this.selection.rect;
+    const from = this.address({ row: rect.top, col: rect.left });
+    const to = this.address({ row: rect.bottom, col: rect.right });
+    return `${from}:${to}`;
+  }
+
+  private selectionHasContent(): boolean {
+    for (const coord of this.selection.cells()) {
+      if (this.workbook.has(this.address(coord))) return true;
+    }
+    return false;
+  }
+
+  private commandContext(): CommandContext {
+    return {
+      rect: this.selection.rect,
+      hasClipboard: this.clipboard !== null,
+      hasContent: this.selectionHasContent(),
+      canUndo: this.workbook.canUndo,
+      canRedo: this.workbook.canRedo,
+      undoLabel: this.workbook.undoLabel,
+      redoLabel: this.workbook.redoLabel,
+      mac: isMac(),
+    };
+  }
+
+  /**
+   * Run one command and put the screen back in step with the sheet.
+   *
+   * Every command goes through here rather than being wired separately to a
+   * key, a menu item and a button, so the three can never drift apart in what
+   * they actually do.
+   */
+  private run(id: CommandId): void {
+    this.commitEdit();
+    const rect = this.selection.rect;
+    const rows = rect.bottom - rect.top + 1;
+    const cols = rect.right - rect.left + 1;
+
+    try {
+      switch (id) {
+        case "copy":
+          this.copySelection();
+          return;
+        case "cut":
+          this.copySelection();
+          this.workbook.clearBlock(this.selectedBlock());
+          this.lastRecalc = "cut";
+          break;
+        case "paste": {
+          if (this.clipboard === null) return;
+          const at = this.address(this.selection.active);
+          this.workbook.paste(this.clipboard, at);
+          this.lastRecalc = `pasted ${this.clipboard.width}x${this.clipboard.height} at ${at}`;
+          break;
+        }
+        case "fill-down":
+          if (rows < 2) return;
+          this.workbook.fillDown(this.selectedBlock());
+          this.lastRecalc = `filled ${this.selectedBlock()}`;
+          break;
+        case "fill-right":
+          if (cols < 2) return;
+          this.workbook.fillRight(this.selectedBlock());
+          this.lastRecalc = `filled ${this.selectedBlock()}`;
+          break;
+        case "clear":
+          this.workbook.clearBlock(this.selectedBlock());
+          this.lastRecalc = "cleared";
+          break;
+        case "insert-rows":
+          this.workbook.insertRows(rect.top, rows);
+          this.lastRecalc = `${rows} row${rows === 1 ? "" : "s"} inserted`;
+          break;
+        case "delete-rows":
+          this.workbook.deleteRows(rect.top, rows);
+          this.lastRecalc = `${rows} row${rows === 1 ? "" : "s"} deleted`;
+          break;
+        case "insert-columns":
+          this.workbook.insertColumns(rect.left, cols);
+          this.lastRecalc = `${cols} column${cols === 1 ? "" : "s"} inserted`;
+          break;
+        case "delete-columns":
+          this.workbook.deleteColumns(rect.left, cols);
+          this.lastRecalc = `${cols} column${cols === 1 ? "" : "s"} deleted`;
+          break;
+        case "undo":
+        case "redo": {
+          const label =
+            id === "undo" ? this.workbook.undoLabel : this.workbook.redoLabel;
+          const done = id === "undo" ? this.workbook.undo() : this.workbook.redo();
+          if (!done) return;
+          this.lastRecalc = `${id === "undo" ? "undid" : "redid"} ${label ?? "the last edit"}`;
+          break;
+        }
+      }
+    } catch (error) {
+      if (!(error instanceof StructureError)) throw error;
+      this.lastRecalc = error.message;
+    }
+
+    // A structural edit can move the cell the clipboard was taken from, so the
+    // outline would point at the wrong block; the copy itself stays usable.
+    if (id.startsWith("insert-") || id.startsWith("delete-") || id === "cut") {
+      this.setCopied(null);
+    }
+
+    this.grid.render();
     this.syncSelection();
+  }
+
+  private copySelection(): void {
+    const rect = this.selection.rect;
+    this.clipboard = this.workbook.copy(this.selectedBlock());
+    this.setCopied(rect);
+    this.lastRecalc = `copied ${this.clipboard.width}x${this.clipboard.height}`;
+    this.updateStatus();
+    this.refreshToolbar();
+  }
+
+  private setCopied(rect: CellRect | null): void {
+    this.copied = rect;
+    this.grid.setMarquee(rect);
+  }
+
+  private pickLine(
+    axis: "row" | "column",
+    index: number,
+    extending: boolean,
+  ): void {
+    this.commitEdit();
+    const far =
+      axis === "row"
+        ? { row: index, col: SHEET_COLS - 1 }
+        : { row: SHEET_ROWS - 1, col: index };
+    const near = axis === "row" ? { row: index, col: 0 } : { row: 0, col: index };
+    if (extending) {
+      this.selection.extendTo(far);
+    } else {
+      this.selection.selectRect(near, far);
+    }
+    this.syncSelection(near);
+  }
+
+  /**
+   * Open the context menu for whatever was right-clicked.
+   *
+   * A right click outside the selection moves it first, which is what every
+   * grid does: acting on a block the user cannot see selected is how a menu
+   * deletes the wrong row.
+   */
+  private openMenu(target: MenuTarget, x: number, y: number): void {
+    if (target.kind === "cell") {
+      if (!rectContains(this.selection.rect, target.coord)) {
+        this.selection.moveTo(target.coord);
+        this.syncSelection();
+      }
+    } else {
+      const rect = this.selection.rect;
+      const inside =
+        target.kind === "row"
+          ? target.index >= rect.top && target.index <= rect.bottom
+          : target.index >= rect.left && target.index <= rect.right;
+      if (!inside) this.pickLine(target.kind, target.index, false);
+    }
+
+    const context = this.commandContext();
+    const groups: Command[][] = [];
+    if (target.kind === "row") groups.push(rowCommands(context));
+    if (target.kind === "column") groups.push(columnCommands(context));
+    groups.push(editCommands(context));
+    groups.push(historyCommands(context));
+    this.menu.show(groups, x, y);
+  }
+
+  private refreshToolbar(): void {
+    this.el.undo.disabled = !this.workbook.canUndo;
+    this.el.redo.disabled = !this.workbook.canRedo;
+    this.el.undo.title =
+      this.workbook.undoLabel === null
+        ? "Nothing to undo"
+        : `Undo ${this.workbook.undoLabel}`;
+    this.el.redo.title =
+      this.workbook.redoLabel === null
+        ? "Nothing to redo"
+        : `Redo ${this.workbook.redoLabel}`;
   }
 
   private loadSample(): void {
@@ -378,6 +614,8 @@ export class App {
     }
     this.workbook.setCells({ ...SAMPLE_SHEET, ...sampleFormulas() });
 
+    this.setCopied(null);
+    this.workbook.clearHistory();
     this.el.sheetName.textContent = "project appraisal";
     this.lastRecalc = `${this.workbook.cellCount} cells loaded`;
     this.selection.moveTo({ row: 0, col: 0 });
@@ -395,6 +633,8 @@ export class App {
       ),
     );
     this.cols.resetAll();
+    this.setCopied(null);
+    this.workbook.clearHistory();
     this.el.sheetName.textContent = "empty sheet";
     this.lastRecalc = "";
     this.selection.moveTo({ row: 0, col: 0 });
@@ -535,6 +775,14 @@ export class App {
       this.clearSheet();
       this.el.body.focus();
     });
+    this.el.undo.addEventListener("click", () => {
+      this.run("undo");
+      this.el.body.focus();
+    });
+    this.el.redo.addEventListener("click", () => {
+      this.run("redo");
+      this.el.body.focus();
+    });
   }
 
   private bindEditors(): void {
@@ -609,6 +857,20 @@ export class App {
     this.el.body.addEventListener("keydown", (event) => {
       if (this.editing !== null) return;
 
+      /*
+       * Shortcuts come first, and none of them animates anything. These are
+       * pressed hundreds of times in a session, and an animation on a keystroke
+       * makes the whole application feel like it is lagging behind the user.
+       */
+      if (event.ctrlKey || event.metaKey) {
+        const command = SHORTCUTS[event.key.toLowerCase()];
+        if (command !== undefined) {
+          event.preventDefault();
+          this.run(command === "undo" && event.shiftKey ? "redo" : command);
+          return;
+        }
+      }
+
       const direction = ARROWS[event.key];
       if (direction !== undefined) {
         event.preventDefault();
@@ -651,7 +913,7 @@ export class App {
         case "Delete":
         case "Backspace": {
           event.preventDefault();
-          this.clearSelection();
+          this.run("clear");
           return;
         }
         case "Home": {
@@ -687,6 +949,9 @@ export class App {
           return;
         }
         case "Escape": {
+          // Escape drops the copy outline first: it is the thing on screen the
+          // user is most likely trying to dismiss.
+          if (this.copied !== null) this.setCopied(null);
           this.selection.moveTo(this.selection.active);
           this.syncSelection();
           return;

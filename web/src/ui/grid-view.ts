@@ -28,12 +28,25 @@ export interface GridElements {
   readonly rowHeadTrack: HTMLElement;
 }
 
+/** Where a right click landed, which decides what the menu offers. */
+export type MenuTarget =
+  | { readonly kind: "cell"; readonly coord: Coord }
+  | { readonly kind: "row"; readonly index: number }
+  | { readonly kind: "column"; readonly index: number };
+
 export interface GridHandlers {
   readonly paint: (row: number, col: number) => CellPaint;
   readonly onPick: (coord: Coord, extending: boolean) => void;
   readonly onDrag: (coord: Coord) => void;
   readonly onOpenEditor: (coord: Coord) => void;
   readonly onResize: () => void;
+  /** A whole row or column picked from its header. */
+  readonly onPickLine: (
+    axis: "row" | "column",
+    index: number,
+    extending: boolean,
+  ) => void;
+  readonly onMenu: (target: MenuTarget, x: number, y: number) => void;
 }
 
 /**
@@ -56,6 +69,7 @@ export class GridView {
   private selection: CellRect = { top: 0, left: 0, bottom: 0, right: 0 };
   private active: Coord = { row: 0, col: 0 };
   private highlight: Highlight | null = null;
+  private marquee: CellRect | null = null;
 
   private dragging = false;
   private resizing: { col: number; startX: number; startWidth: number } | null =
@@ -75,6 +89,10 @@ export class GridView {
     this.el.cellLayer.addEventListener("mousedown", this.onCellMouseDown);
     this.el.cellLayer.addEventListener("dblclick", this.onCellDoubleClick);
     this.el.colHeadTrack.addEventListener("mousedown", this.onHeadMouseDown);
+    this.el.rowHeadTrack.addEventListener("mousedown", this.onRowHeadMouseDown);
+    this.el.cellLayer.addEventListener("contextmenu", this.onCellMenu);
+    this.el.colHeadTrack.addEventListener("contextmenu", this.onColHeadMenu);
+    this.el.rowHeadTrack.addEventListener("contextmenu", this.onRowHeadMenu);
     window.addEventListener("mousemove", this.onMouseMove);
     window.addEventListener("mouseup", this.onMouseUp);
     window.addEventListener("resize", this.onWindowResize);
@@ -99,6 +117,18 @@ export class GridView {
     this.active = active;
     this.paintMarks();
     this.paintHeadState();
+  }
+
+  /**
+   * Outline the block currently on the clipboard, or clear the outline.
+   *
+   * A copy leaves no other trace on screen, so without this the user has to
+   * remember what they took — and a paste that lands the wrong thing is only
+   * noticed after it has overwritten something.
+   */
+  setMarquee(rect: CellRect | null): void {
+    this.marquee = rect;
+    this.paintMarks();
   }
 
   setHighlight(highlight: Highlight | null): void {
@@ -287,6 +317,8 @@ export class GridView {
       this.selection.top === this.selection.bottom &&
       this.selection.left === this.selection.right;
 
+    if (this.marquee !== null) place("mark mark--copy", this.marquee, 1);
+
     if (!isSingle) place("mark mark--range", this.selection, 0);
     place("mark mark--active", {
       top: this.active.row,
@@ -390,7 +422,15 @@ export class GridView {
 
   private readonly onHeadMouseDown = (event: MouseEvent): void => {
     const target = event.target as HTMLElement;
-    if (!target.classList.contains("head__grip")) return;
+    if (!target.classList.contains("head__grip")) {
+      if (event.button !== 0) return;
+      const picked = lineIndexOf(target, "col");
+      if (picked === null) return;
+      this.handlers.onPickLine("column", picked, event.shiftKey);
+      event.preventDefault();
+      this.el.body.focus();
+      return;
+    }
     const col = Number((target.parentElement as HTMLElement).dataset["col"]);
     if (!Number.isInteger(col)) return;
 
@@ -401,6 +441,51 @@ export class GridView {
     };
     document.body.style.cursor = "col-resize";
     event.preventDefault();
+  };
+
+  private readonly onRowHeadMouseDown = (event: MouseEvent): void => {
+    if (event.button !== 0) return;
+    const row = lineIndexOf(event.target as HTMLElement, "row");
+    if (row === null) return;
+    this.handlers.onPickLine("row", row, event.shiftKey);
+    event.preventDefault();
+    this.el.body.focus();
+  };
+
+  private readonly onCellMenu = (event: MouseEvent): void => {
+    event.preventDefault();
+    // A right click on a non-focusable header or cell would otherwise hand
+    // focus to the document, and every key press after it would go nowhere.
+    this.el.body.focus();
+    this.handlers.onMenu(
+      { kind: "cell", coord: this.coordAt(event.clientX, event.clientY) },
+      event.clientX,
+      event.clientY,
+    );
+  };
+
+  private readonly onColHeadMenu = (event: MouseEvent): void => {
+    const col = lineIndexOf(event.target as HTMLElement, "col");
+    if (col === null) return;
+    event.preventDefault();
+    this.el.body.focus();
+    this.handlers.onMenu(
+      { kind: "column", index: col },
+      event.clientX,
+      event.clientY,
+    );
+  };
+
+  private readonly onRowHeadMenu = (event: MouseEvent): void => {
+    const row = lineIndexOf(event.target as HTMLElement, "row");
+    if (row === null) return;
+    event.preventDefault();
+    this.el.body.focus();
+    this.handlers.onMenu(
+      { kind: "row", index: row },
+      event.clientX,
+      event.clientY,
+    );
   };
 
   private readonly onMouseMove = (event: MouseEvent): void => {
@@ -422,4 +507,18 @@ export class GridView {
       this.handlers.onResize();
     }
   };
+}
+
+/**
+ * The row or column a header event belongs to.
+ *
+ * Header cells hold a label element, so the event target is often a child of
+ * the node carrying the index; `closest` walks up to it. Returns null for an
+ * event on the track itself, past the last header.
+ */
+function lineIndexOf(target: HTMLElement, axis: "row" | "col"): number | null {
+  const head = target.closest(`[data-${axis}]`) as HTMLElement | null;
+  if (head === null) return null;
+  const index = Number(head.dataset[axis]);
+  return Number.isInteger(index) ? index : null;
 }
