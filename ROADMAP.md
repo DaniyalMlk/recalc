@@ -69,11 +69,11 @@ tree green and the public API usable.
 
 ## Phase 9 — Fill, clipboard and history
 
-- [ ] Fill down and fill across, translating relative references
-- [ ] Copy a block and paste it anywhere, with the same translation
-- [ ] Clear a block in one operation
-- [ ] An edit journal with undo and redo
-- [ ] Shell commands for filling, copying and undoing
+- [x] Fill down and fill across, translating relative references
+- [x] Copy a block and paste it anywhere, with the same translation
+- [x] Clear a block in one operation
+- [x] An edit journal with undo and redo
+- [x] Shell commands for filling, copying and undoing
 
 ## Phase 10 — Editing in the grid
 

@@ -15,11 +15,12 @@ formula depends on, and recalculates only what an edit actually invalidated.
 
 ## Status
 
-Phases 1–8 of [ROADMAP.md](ROADMAP.md) are complete: the formula grammar, the
+Phases 1–9 of [ROADMAP.md](ROADMAP.md) are complete: the formula grammar, the
 reference model, the dependency graph, the evaluator, a function library of 97
 functions including a financial pack, a web interface with a virtualised grid,
-CSV interchange, named ranges, a benchmark harness, and structural editing that
-rewrites every formula in the sheet when rows and columns move.
+CSV interchange, named ranges, a benchmark harness, structural editing that
+rewrites every formula in the sheet when rows and columns move, and block
+editing — fill, clipboard and an undo history — on top of it.
 
 ## Using it as a library
 
@@ -56,6 +57,23 @@ book.names()[0].target;     // "B2" - so did the name
 book.deleteRows(1, 1);      // delete the row the unit count was on
 book.getInput("B6");        // "=#REF!*B2" - there is nothing left to read
 book.names()[0].target;     // "#REF!" - and the name says so too
+```
+
+Filling and pasting translate the relative parts of a reference and leave the
+anchored parts alone, and every operation is one step in the undo history:
+
+```ts
+const sheet = new Workbook();
+sheet.setCells({ A1: 100, A2: 250, A3: 90, B1: "=A1*0.2" });
+
+sheet.fillDown("B1:B3");
+sheet.getInput("B3");                    // "=A3*0.2"
+
+sheet.paste(sheet.copy("B1:B3"), "D1");
+sheet.getInput("D1");                    // "=C1*0.2"
+
+sheet.undoLabel;                         // "paste"
+sheet.undo();                            // all three pasted cells, in one step
 ```
 
 ## Using it from the browser
@@ -98,7 +116,9 @@ recalc> B10
 
 `.help` lists the commands: `.list`, `.show A1:C9`, `.prec`, `.deps`, `.plan`,
 `.cycles`, `.fns`, `.help FN`, `.demo`, `.clear`, `.reset`; for names
-`.name Revenue = B2:B13`, `.names`, `.unname Revenue`; for rows and columns
+`.name Revenue = B2:B13`, `.names`, `.unname Revenue`; for blocks
+`.filldown B1:B9`, `.fillright B2:F2`, `.copy A1:C3`, `.paste D5`, `.undo`,
+`.redo`; for rows and columns
 `.insertrow 3 [n]`, `.deleterow 3 [n]`, `.insertcol C [n]`, `.deletecol C [n]`;
 and for CSV `.csv [formulas]`, `.import data.csv [A1]`,
 `.export out.csv [formulas]`.
@@ -203,6 +223,22 @@ identity to decide whether to touch the cell's stored text at all. It is the
 difference between a sheet that survives a hundred row inserts with its formulas
 still spelled the way they were typed, and one where an unrelated edit silently
 reformats `=A1 + A2` into `=A1+A2` everywhere.
+
+**Translation and structural adjustment are different operations.** Both move
+references, and it is tempting to write one and reuse it. The difference is the
+anchors: a structural edit moves the cells themselves, so `$A$1` has to follow
+them, while a fill or a paste moves the *formula* over cells that did not move,
+which is exactly the case a `$` exists to opt out of. One shared routine with a
+flag would keep the two apart in the caller's head and nowhere else.
+
+**The undo journal records inputs, not values.** Values are derived, so
+restoring the inputs and letting the engine recompute reproduces them exactly;
+a journal of values would go stale the moment anything upstream changed. It
+records the difference an operation made rather than a snapshot of the sheet,
+because snapshotting on every keystroke is quadratic in the size of the sheet
+over a session of ordinary typing. The exception is a structural edit, which
+can move every cell at once and honestly says its scope is the whole sheet
+rather than pretending to a bound it does not have.
 
 **CSV is scanned, not split.** `line.split(",")` is wrong on the first field
 containing a comma and `text.split("\n")` is wrong on the first field containing

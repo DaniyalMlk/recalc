@@ -3,6 +3,7 @@ export * from "./engine/errors.js";
 export * from "./engine/evaluator.js";
 export * from "./engine/graph.js";
 export * from "./engine/grid.js";
+export * from "./engine/history.js";
 export * from "./engine/lexer.js";
 export * from "./engine/names.js";
 export * from "./engine/parser.js";
@@ -11,8 +12,14 @@ export * from "./engine/printer.js";
 export * from "./engine/recalc.js";
 export * from "./engine/reference.js";
 export * from "./engine/structure.js";
+export * from "./engine/translate.js";
 export * from "./engine/value.js";
 export { Workbook, interpretInput } from "./engine/workbook.js";
-export type { Address, CellRecord } from "./engine/workbook.js";
+export type {
+  Address,
+  BlockAddress,
+  CellRecord,
+  Clipboard,
+} from "./engine/workbook.js";
 export * from "./functions/index.js";
 export * from "./io/csv.js";
