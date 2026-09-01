@@ -15,12 +15,12 @@ formula depends on, and recalculates only what an edit actually invalidated.
 
 ## Status
 
-Phases 1–9 of [ROADMAP.md](ROADMAP.md) are complete: the formula grammar, the
+Every phase in [ROADMAP.md](ROADMAP.md) is complete: the formula grammar, the
 reference model, the dependency graph, the evaluator, a function library of 97
-functions including a financial pack, a web interface with a virtualised grid,
-CSV interchange, named ranges, a benchmark harness, structural editing that
-rewrites every formula in the sheet when rows and columns move, and block
-editing — fill, clipboard and an undo history — on top of it.
+functions including a financial pack, CSV interchange, named ranges, a
+benchmark harness, structural editing that rewrites every formula in the sheet
+when rows and columns move, block editing with fill, clipboard and undo, and a
+web interface where all of it is reachable from a virtualised grid.
 
 ## Using it as a library
 
@@ -90,6 +90,14 @@ edge of a block of content, `F2` opens a cell, and `Tab` walks a marked-out bloc
 without leaving it. Selecting a cell shows what it reads, what reads it, and the
 order the engine would recompute in; editing a formula outlines each reference on
 the grid in the colour it is shown in the formula bar.
+
+Editing works on blocks as well as cells. `Ctrl`+`D` and `Ctrl`+`R` fill a
+selection down and across, `Ctrl`+`C`/`X`/`V` copy, cut and paste one — with the
+references translated by the distance moved, and the copied block outlined until
+it is dropped — and `Ctrl`+`Z` steps back through the whole session. Clicking a
+row or column header selects the line; right-clicking one offers to insert or
+delete it, with the menu naming what it would do to the current selection rather
+than in the abstract.
 
 ## Using it from the shell
 
@@ -239,6 +247,22 @@ because snapshotting on every keystroke is quadratic in the size of the sheet
 over a session of ordinary typing. The exception is a structural edit, which
 can move every cell at once and honestly says its scope is the whole sheet
 rather than pretending to a bound it does not have.
+
+**The grid's commands are computed, not hard-coded into three places.** A
+command exists in a menu item, a keyboard shortcut and sometimes a toolbar
+button, and the tempting shape is to wire each of those up where it lives. Then
+the menu says "Fill down" over a one-row selection that cannot fill, or the
+button stays enabled with an empty history. Instead one module works out what
+the current selection can do and what to call it — "Insert 3 rows above",
+"Delete columns C–E", "Undo insert 3 rows at 4" — and everything on screen reads
+from that. The labels come from the workbook's own journal, so a button can
+never promise something different from what pressing it does.
+
+**Nothing driven by a keystroke animates.** Copy, paste, fill and undo are
+pressed hundreds of times in a working session, and an animation on any of them
+turns into a delay the user feels every single time. The context menu is the one
+thing that moves, because a right click is rare and a popup that grows from the
+pointer reads as attached to the click rather than dropped onto the page.
 
 **CSV is scanned, not split.** `line.split(",")` is wrong on the first field
 containing a comma and `text.split("\n")` is wrong on the first field containing

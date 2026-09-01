@@ -77,7 +77,7 @@ tree green and the public API usable.
 
 ## Phase 10 — Editing in the grid
 
-- [ ] Row and column insertion and deletion from the headers
-- [ ] Fill and clipboard shortcuts on a selected block
-- [ ] Undo and redo wired to the keyboard
-- [ ] The toolbar reflects what the current selection can do
+- [x] Row and column insertion and deletion from the headers
+- [x] Fill and clipboard shortcuts on a selected block
+- [x] Undo and redo wired to the keyboard
+- [x] The toolbar reflects what the current selection can do
