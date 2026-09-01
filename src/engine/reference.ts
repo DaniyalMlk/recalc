@@ -199,6 +199,26 @@ export function* iterateRange(range: RangeRef): Generator<Coord> {
   }
 }
 
+/**
+ * Parse `A1:C9` into a normalised range.
+ *
+ * A single address is accepted and read as the one-cell range covering it, so
+ * callers that take "a block" do not need a second code path for the case where
+ * the block happens to be one cell.
+ */
+export function parseA1Range(text: string): RangeRef {
+  const trimmed = text.trim();
+  const colon = trimmed.indexOf(":");
+  if (colon < 0) {
+    const ref = parseA1(trimmed);
+    return { start: ref, end: ref };
+  }
+  return normalizeRange({
+    start: parseA1(trimmed.slice(0, colon)),
+    end: parseA1(trimmed.slice(colon + 1)),
+  });
+}
+
 export function formatRange(range: RangeRef): string {
   return `${formatA1(range.start)}:${formatA1(range.end)}`;
 }

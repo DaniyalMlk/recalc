@@ -14,14 +14,19 @@ import type { Precedents } from "./precedents.js";
 import { printFormula } from "./printer.js";
 import { recalculate } from "./recalc.js";
 import {
+  MAX_COLUMNS,
+  MAX_ROWS,
   cellKey,
   formatA1,
   formatRange,
   iterateRange,
+  normalizeRange,
   parseA1,
+  parseA1Range,
   parseCellKey,
 } from "./reference.js";
 import type { CellRef, Coord, RangeRef } from "./reference.js";
+import { translateAst } from "./translate.js";
 import { adjustAst, adjustCoord, validateEdit } from "./structure.js";
 import type { StructuralEdit } from "./structure.js";
 import { formatValue, parseNumericText } from "./value.js";
@@ -42,8 +47,33 @@ export interface CellRecord {
 /** A cell address, given either as A1 text or as coordinates. */
 export type Address = string | Coord;
 
+/** A rectangular block, given either as `A1:C9` text or as a range. */
+export type BlockAddress = string | RangeRef;
+
 function toCoord(address: Address): CellRef | Coord {
   return typeof address === "string" ? parseA1(address) : address;
+}
+
+function toRange(block: BlockAddress): RangeRef {
+  return typeof block === "string"
+    ? parseA1Range(block)
+    : normalizeRange(block);
+}
+
+/**
+ * A copied block of cells, holding what was typed rather than what it showed.
+ *
+ * `origin` is where the block was taken from, which is the only reason a paste
+ * can translate: the delta is the distance between the origin and wherever the
+ * block lands. A `null` entry is a cell that was blank when it was copied, and
+ * pasting one blanks its target rather than leaving what was underneath.
+ */
+export interface Clipboard {
+  readonly origin: Coord;
+  readonly width: number;
+  readonly height: number;
+  /** Row-major, `height` rows of `width` entries. */
+  readonly cells: readonly (readonly (string | null)[])[];
 }
 
 /** Render a dependency-graph cell id as a plain A1 address. */
@@ -86,6 +116,25 @@ export function interpretInput(input: string): {
   if (upper === "FALSE") return { ast: null, literal: false };
 
   return { ast: null, literal: input };
+}
+
+/**
+ * Move one cell's typed text by a delta.
+ *
+ * Pasted text arrives as a string rather than a parsed record, so the formula
+ * has to make the round trip through the parser. That is the price of a
+ * clipboard that holds text: it can outlive the sheet it came from, and a
+ * pre-parsed tree could not.
+ */
+function translateInputText(
+  input: string,
+  deltaCol: number,
+  deltaRow: number,
+): string {
+  if (!input.startsWith("=")) return input;
+  const ast = parseFormula(input);
+  const moved = translateAst(ast, deltaCol, deltaRow);
+  return moved === ast ? input : printFormula(moved, true);
 }
 
 /**
@@ -140,13 +189,27 @@ export class Workbook {
 
   /** Enter many cells, then recalculate once for the whole batch. */
   setCells(entries: Record<string, string | number | boolean | null>): void {
+    this.writeInputs(
+      Object.entries(entries).map(
+        ([address, input]) =>
+          [parseA1(address), input === null ? "" : String(input)] as const,
+      ),
+    );
+  }
+
+  /**
+   * Write a batch of cells and recalculate once for the whole batch.
+   *
+   * Every bulk operation — filling, pasting, clearing a block, undoing — comes
+   * through here, so they all get the one recalculation pass rather than one
+   * per cell. An empty string clears its cell.
+   */
+  private writeInputs(entries: Iterable<readonly [Coord, string]>): void {
     const seeds: Coord[] = [];
-    for (const [address, input] of Object.entries(entries)) {
-      const coord = parseA1(address);
-      const text = input === null ? "" : String(input);
+    for (const [coord, text] of entries) {
       if (text === "") {
         this.cells.delete(coord);
-        this.graph.clearPrecedents(coord);
+        this.writePrecedents(coord, null);
         seeds.push(coord);
         continue;
       }
@@ -163,6 +226,130 @@ export class Workbook {
     this.cells.delete(coord);
     this.writePrecedents(coord, null);
     this.recalculateFrom([coord]);
+  }
+
+  /**
+   * Copy the first row of a block into the rows beneath it.
+   *
+   * The source row is part of the block, the way a spreadsheet's fill handle
+   * works: `fillDown("B2:B10")` copies row 2 into rows 3 to 10. Formulas are
+   * translated by the distance travelled, so `=A2*Rate` becomes `=A3*Rate` one
+   * row down, while `=A$2*Rate` does not move at all.
+   */
+  fillDown(block: BlockAddress): void {
+    const range = toRange(block);
+    const height = range.end.row - range.start.row + 1;
+    if (height < 2) return;
+
+    const updates: [Coord, string][] = [];
+    for (let col = range.start.col; col <= range.end.col; col++) {
+      const source = this.cells.get({ col, row: range.start.row });
+      for (let row = range.start.row + 1; row <= range.end.row; row++) {
+        updates.push([
+          { col, row },
+          source === undefined
+            ? ""
+            : this.translatedInput(source, 0, row - range.start.row),
+        ]);
+      }
+    }
+    this.writeInputs(updates);
+  }
+
+  /** Copy the first column of a block into the columns to its right. */
+  fillRight(block: BlockAddress): void {
+    const range = toRange(block);
+    const width = range.end.col - range.start.col + 1;
+    if (width < 2) return;
+
+    const updates: [Coord, string][] = [];
+    for (let row = range.start.row; row <= range.end.row; row++) {
+      const source = this.cells.get({ col: range.start.col, row });
+      for (let col = range.start.col + 1; col <= range.end.col; col++) {
+        updates.push([
+          { col, row },
+          source === undefined
+            ? ""
+            : this.translatedInput(source, col - range.start.col, 0),
+        ]);
+      }
+    }
+    this.writeInputs(updates);
+  }
+
+  /** Take a copy of a block, as typed, ready to paste elsewhere. */
+  copy(block: BlockAddress): Clipboard {
+    const range = toRange(block);
+    const cells: (string | null)[][] = [];
+    for (let row = range.start.row; row <= range.end.row; row++) {
+      const line: (string | null)[] = [];
+      for (let col = range.start.col; col <= range.end.col; col++) {
+        line.push(this.cells.get({ col, row })?.input ?? null);
+      }
+      cells.push(line);
+    }
+    return {
+      origin: { col: range.start.col, row: range.start.row },
+      width: range.end.col - range.start.col + 1,
+      height: range.end.row - range.start.row + 1,
+      cells,
+    };
+  }
+
+  /**
+   * Paste a copied block with its top-left corner at `target`.
+   *
+   * Formulas are translated by the distance from where the block was copied,
+   * which is why the clipboard remembers its origin. Cells that fall off the
+   * edge of the sheet are dropped rather than wrapping or clamping.
+   */
+  paste(clipboard: Clipboard, target: Address): void {
+    const at = toCoord(target);
+    const deltaCol = at.col - clipboard.origin.col;
+    const deltaRow = at.row - clipboard.origin.row;
+
+    const updates: [Coord, string][] = [];
+    for (let row = 0; row < clipboard.height; row++) {
+      const line = clipboard.cells[row] ?? [];
+      for (let col = 0; col < clipboard.width; col++) {
+        const coord = { col: at.col + col, row: at.row + row };
+        if (coord.col >= MAX_COLUMNS || coord.row >= MAX_ROWS) continue;
+        const input = line[col] ?? null;
+        updates.push([
+          coord,
+          input === null ? "" : translateInputText(input, deltaCol, deltaRow),
+        ]);
+      }
+    }
+    this.writeInputs(updates);
+  }
+
+  /** Empty every occupied cell in a block, in one recalculation pass. */
+  clearBlock(block: BlockAddress): void {
+    const range = toRange(block);
+    const updates: [Coord, string][] = [];
+    for (const [coord] of this.cells.entriesInRange(range)) {
+      updates.push([coord, ""]);
+    }
+    if (updates.length > 0) this.writeInputs(updates);
+  }
+
+  /**
+   * What a cell's input becomes once it has been moved by a delta.
+   *
+   * A literal is copied exactly, including a leading apostrophe: it is text,
+   * and text does not depend on where it sits. A formula is only reprinted when
+   * translation actually moved something inside it, so filling a column of
+   * `=$B$1*2` leaves every copy spelled the way the first one was.
+   */
+  private translatedInput(
+    record: CellRecord,
+    deltaCol: number,
+    deltaRow: number,
+  ): string {
+    if (record.ast === null) return record.input;
+    const moved = translateAst(record.ast, deltaCol, deltaRow);
+    return moved === record.ast ? record.input : printFormula(moved, true);
   }
 
   /**
