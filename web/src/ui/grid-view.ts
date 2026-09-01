@@ -454,6 +454,9 @@ export class GridView {
 
   private readonly onCellMenu = (event: MouseEvent): void => {
     event.preventDefault();
+    // A right click on a non-focusable header or cell would otherwise hand
+    // focus to the document, and every key press after it would go nowhere.
+    this.el.body.focus();
     this.handlers.onMenu(
       { kind: "cell", coord: this.coordAt(event.clientX, event.clientY) },
       event.clientX,
@@ -465,6 +468,7 @@ export class GridView {
     const col = lineIndexOf(event.target as HTMLElement, "col");
     if (col === null) return;
     event.preventDefault();
+    this.el.body.focus();
     this.handlers.onMenu(
       { kind: "column", index: col },
       event.clientX,
@@ -476,6 +480,7 @@ export class GridView {
     const row = lineIndexOf(event.target as HTMLElement, "row");
     if (row === null) return;
     event.preventDefault();
+    this.el.body.focus();
     this.handlers.onMenu(
       { kind: "row", index: row },
       event.clientX,

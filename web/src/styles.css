@@ -803,9 +803,13 @@ body {
   background: var(--surface);
   border: 1px solid var(--rule-strong);
   border-radius: 7px;
-  box-shadow:
-    0 1px 2px rgba(35, 33, 30, 0.06),
-    0 8px 24px rgba(35, 33, 30, 0.12);
+  /*
+   * One lift, with an offset and a blur, rather than a border plus a wide
+   * halo. The rest of this interface separates surfaces with hairlines, so the
+   * menu keeps the hairline and adds only as much shadow as it takes to read
+   * as floating over the grid rather than being part of it.
+   */
+  box-shadow: 0 6px 16px rgba(35, 33, 30, 0.14);
   opacity: 0;
   transform: scale(0.96);
   /*
@@ -841,9 +845,15 @@ body {
   cursor: pointer;
 }
 
-.menu__item:hover:not([disabled]) {
+.menu__item:hover:not([disabled]),
+.menu__item.is-cursor:not([disabled]) {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+.menu__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .menu__item[disabled] {
@@ -857,7 +867,8 @@ body {
   color: var(--ink-mute);
 }
 
-.menu__item:hover:not([disabled]) .menu__hint {
+.menu__item:hover:not([disabled]) .menu__hint,
+.menu__item.is-cursor:not([disabled]) .menu__hint {
   color: var(--accent);
 }
 

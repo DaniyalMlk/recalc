@@ -16,6 +16,8 @@ import type { Command, CommandId } from "../core/commands.js";
 export class ContextMenu {
   private readonly root: HTMLDivElement;
   private open = false;
+  /** Index into the enabled items, or -1 when the keyboard has not been used. */
+  private cursor = -1;
 
   constructor(private readonly onChoose: (id: CommandId) => void) {
     this.root = document.createElement("div");
@@ -47,13 +49,7 @@ export class ContextMenu {
     window.addEventListener("mousedown", () => this.hide());
     window.addEventListener("resize", () => this.hide());
     window.addEventListener("blur", () => this.hide());
-    window.addEventListener(
-      "keydown",
-      (event) => {
-        if (event.key === "Escape") this.hide();
-      },
-      true,
-    );
+    window.addEventListener("keydown", this.onKey, true);
   }
 
   get isOpen(): boolean {
@@ -88,13 +84,77 @@ export class ContextMenu {
     this.root.style.transformOrigin = `${x - left}px ${y - top}px`;
     this.root.classList.add("is-open");
     this.open = true;
+    this.cursor = -1;
   }
 
   hide(): void {
     if (!this.open) return;
     this.open = false;
+    this.cursor = -1;
     this.root.classList.remove("is-open");
     this.root.hidden = true;
+  }
+
+  /**
+   * Drive the menu from the keyboard once it is open.
+   *
+   * The commands all have shortcuts of their own, so this is not the fast path
+   * — but a menu that can be opened and then not used without a mouse is a menu
+   * that traps anyone who opened it with the context-menu key.
+   */
+  private readonly onKey = (event: KeyboardEvent): void => {
+    if (!this.open) return;
+
+    // The grid is still the focused element, so anything this menu acts on has
+    // to be stopped here or the selection moves underneath the open menu.
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      this.hide();
+      return;
+    }
+
+    const items = this.enabledItems();
+    if (items.length === 0) {
+      this.hide();
+      return;
+    }
+
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      event.stopPropagation();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      const next = this.cursor < 0 ? (step > 0 ? 0 : items.length - 1) : this.cursor + step;
+      this.moveCursor((next + items.length) % items.length, items);
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === " ") {
+      if (this.cursor < 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const id = items[this.cursor]?.dataset["command"] as CommandId | undefined;
+      this.hide();
+      if (id !== undefined) this.onChoose(id);
+      return;
+    }
+
+    // Anything else belongs to the sheet. Get out of its way rather than
+    // leaving a menu floating over a cell the user has started typing into.
+    this.hide();
+  };
+
+  private enabledItems(): HTMLElement[] {
+    return [...this.root.querySelectorAll<HTMLElement>("[data-command]")].filter(
+      (item) => !item.hasAttribute("disabled"),
+    );
+  }
+
+  private moveCursor(index: number, items: readonly HTMLElement[]): void {
+    this.cursor = index;
+    for (const [at, item] of items.entries()) {
+      item.classList.toggle("is-cursor", at === index);
+    }
   }
 
   private item(command: Command): HTMLElement {
