@@ -5,6 +5,8 @@ import { CYCLE_ERROR, err } from "./errors.js";
 import { evaluate } from "./evaluator.js";
 import type { EvalContext } from "./evaluator.js";
 import { DependencyGraph } from "./graph.js";
+import { EditJournal, diffInputs } from "./history.js";
+import type { Change } from "./history.js";
 import { SparseGrid } from "./grid.js";
 import { NameTable } from "./names.js";
 import type { NameBinding, NameEntry } from "./names.js";
@@ -17,6 +19,7 @@ import {
   MAX_COLUMNS,
   MAX_ROWS,
   cellKey,
+  columnToLabel,
   formatA1,
   formatRange,
   iterateRange,
@@ -58,6 +61,33 @@ function toRange(block: BlockAddress): RangeRef {
   return typeof block === "string"
     ? parseA1Range(block)
     : normalizeRange(block);
+}
+
+/** Render a coordinate as a plain, unanchored A1 address. */
+function addressOf(coord: Coord): string {
+  return formatA1({ ...coord, colAbsolute: false, rowAbsolute: false });
+}
+
+/** A short description of a structural edit, for the undo history. */
+function structuralLabel(edit: StructuralEdit): string {
+  const noun = `${edit.axis}${edit.count === 1 ? "" : "s"}`;
+  const where =
+    edit.axis === "row" ? String(edit.at + 1) : columnToLabel(edit.at);
+  return `${edit.operation} ${edit.count} ${noun} at ${where}`;
+}
+
+/**
+ * Whether two name tables hold the same thing.
+ *
+ * Compared by serialised form because a binding is a small closed union of
+ * plain data - a value, a reference or a range - and writing the comparison out
+ * by hand would be three cases that have to be kept in step with the union.
+ */
+function sameNames(
+  before: readonly NameEntry[],
+  after: readonly NameEntry[],
+): boolean {
+  return JSON.stringify(before) === JSON.stringify(after);
 }
 
 /**
@@ -159,11 +189,161 @@ export class Workbook {
    */
   private readonly nameUsers = new Map<string, Set<string>>();
 
+  private readonly journal = new EditJournal();
+
+  /**
+   * Set while an operation is being recorded or replayed.
+   *
+   * Mutators call each other, and undo is itself a write. Only the outermost
+   * call is one operation from the user's point of view; anything nested inside
+   * belongs to it rather than being a second entry in the journal.
+   */
+  private recording = false;
+
   private readonly context: EvalContext = {
     readCell: (coord) => this.cells.get(coord)?.value ?? null,
     readRange: (range) => this.readRange(range),
     resolveName: (name) => this.nameTable.get(name),
   };
+
+  /** Whether there is an operation to undo. */
+  get canUndo(): boolean {
+    return this.journal.canUndo;
+  }
+
+  /** Whether there is an undone operation to reapply. */
+  get canRedo(): boolean {
+    return this.journal.canRedo;
+  }
+
+  /** A short description of what undo would reverse, for a menu. */
+  get undoLabel(): string | null {
+    return this.journal.undoLabel;
+  }
+
+  /** A short description of what redo would reapply. */
+  get redoLabel(): string | null {
+    return this.journal.redoLabel;
+  }
+
+  /**
+   * Reverse the most recent operation. Returns false when there is none.
+   *
+   * The journal holds inputs, so undo restores what was typed and lets the
+   * engine recompute the rest. Restoring values instead would be faster and
+   * wrong the moment anything the sheet depends on has moved on.
+   */
+  undo(): boolean {
+    const change = this.journal.takeUndo();
+    if (change === null) return false;
+    this.applyChange(change, "before");
+    return true;
+  }
+
+  /** Reapply the most recently undone operation. */
+  redo(): boolean {
+    const change = this.journal.takeRedo();
+    if (change === null) return false;
+    this.applyChange(change, "after");
+    return true;
+  }
+
+  /** Forget the edit history, keeping the sheet as it is. */
+  clearHistory(): void {
+    this.journal.clear();
+  }
+
+  /**
+   * Run one operation and record what it changed.
+   *
+   * `scope` is where to look for changes: the addresses the operation could
+   * possibly touch, or `"sheet"` when it could touch anything. Narrowing it is
+   * what keeps a one-cell edit from costing a scan of the whole sheet, and
+   * getting it wrong loses edits from the journal rather than corrupting
+   * anything — so operations that cannot bound their reach say so honestly.
+   */
+  private transact(
+    label: string,
+    scope: readonly Coord[] | "sheet",
+    body: () => void,
+  ): void {
+    if (this.recording) {
+      body();
+      return;
+    }
+
+    const namesBefore = this.nameTable.list();
+    const before = this.captureInputs(scope);
+
+    this.recording = true;
+    try {
+      body();
+    } finally {
+      this.recording = false;
+    }
+
+    const after = this.captureInputs(scope);
+    const namesAfter = this.nameTable.list();
+    const cells = diffInputs(before, after);
+    const names = sameNames(namesBefore, namesAfter)
+      ? undefined
+      : { before: namesBefore, after: namesAfter };
+
+    this.journal.record(
+      names === undefined ? { label, cells } : { label, cells, names },
+    );
+  }
+
+  private captureInputs(
+    scope: readonly Coord[] | "sheet",
+  ): Map<string, string> {
+    const out = new Map<string, string>();
+    if (scope === "sheet") {
+      for (const [coord, record] of this.cells.entries()) {
+        out.set(addressOf(coord), record.input);
+      }
+      return out;
+    }
+    for (const coord of scope) {
+      const record = this.cells.get(coord);
+      if (record !== undefined) out.set(addressOf(coord), record.input);
+    }
+    return out;
+  }
+
+  /**
+   * Put the sheet into one side of a recorded change.
+   *
+   * Restoring names needs more than a table swap: the formulas that mention a
+   * name carry the cells it resolved to in the graph, so those edges have to be
+   * rebuilt before anything is recomputed.
+   */
+  private applyChange(change: Change, side: "before" | "after"): void {
+    this.recording = true;
+    try {
+      if (change.names !== undefined) {
+        this.nameTable.restore(change.names[side]);
+      }
+      this.writeInputs(
+        change.cells.map(
+          (cell) => [parseA1(cell.address), cell[side]] as const,
+        ),
+      );
+      if (change.names !== undefined) this.rebuildPrecedents();
+    } finally {
+      this.recording = false;
+    }
+  }
+
+  /** Re-derive every formula's edges, then recompute the sheet. */
+  private rebuildPrecedents(): void {
+    this.graph.clear();
+    this.nameUsers.clear();
+    for (const [coord, record] of this.cells.entries()) {
+      this.writePrecedents(coord, record.ast);
+    }
+    this.recalculateAll();
+  }
 
   /**
    * Enter a value or formula into a cell.
@@ -174,26 +354,23 @@ export class Workbook {
   setCell(address: Address, input: string | number | boolean | null): void {
     const coord = toCoord(address);
     const text = input === null ? "" : String(input);
-
-    if (text === "") {
-      this.clearCell(coord);
-      return;
-    }
-
-    const { ast, literal } = interpretInput(text);
-    this.cells.set(coord, { input: text, ast, literal, value: literal });
-
-    this.writePrecedents(coord, ast);
-    this.recalculateFrom([coord]);
+    this.transact(`edit ${addressOf(coord)}`, [coord], () => {
+      this.writeInputs([[coord, text]]);
+    });
   }
 
   /** Enter many cells, then recalculate once for the whole batch. */
   setCells(entries: Record<string, string | number | boolean | null>): void {
-    this.writeInputs(
-      Object.entries(entries).map(
-        ([address, input]) =>
-          [parseA1(address), input === null ? "" : String(input)] as const,
-      ),
+    const updates = Object.entries(entries).map(
+      ([address, input]) =>
+        [parseA1(address), input === null ? "" : String(input)] as const,
+    );
+    this.transact(
+      `enter ${updates.length} cell${updates.length === 1 ? "" : "s"}`,
+      updates.map(([coord]) => coord),
+      () => {
+        this.writeInputs(updates);
+      },
     );
   }
 
@@ -223,9 +400,9 @@ export class Workbook {
 
   clearCell(address: Address): void {
     const coord = toCoord(address);
-    this.cells.delete(coord);
-    this.writePrecedents(coord, null);
-    this.recalculateFrom([coord]);
+    this.transact(`clear ${addressOf(coord)}`, [coord], () => {
+      this.writeInputs([[coord, ""]]);
+    });
   }
 
   /**
@@ -242,6 +419,8 @@ export class Workbook {
     if (height < 2) return;
 
     const updates: [Coord, string][] = [];
+    // The source row is read before anything is written, so a block that
+    // overlaps its own source still fills from the original.
     for (let col = range.start.col; col <= range.end.col; col++) {
       const source = this.cells.get({ col, row: range.start.row });
       for (let row = range.start.row + 1; row <= range.end.row; row++) {
@@ -253,7 +432,9 @@ export class Workbook {
         ]);
       }
     }
-    this.writeInputs(updates);
+    this.transact("fill down", updates.map(([coord]) => coord), () => {
+      this.writeInputs(updates);
+    });
   }
 
   /** Copy the first column of a block into the columns to its right. */
@@ -274,7 +455,9 @@ export class Workbook {
         ]);
       }
     }
-    this.writeInputs(updates);
+    this.transact("fill across", updates.map(([coord]) => coord), () => {
+      this.writeInputs(updates);
+    });
   }
 
   /** Take a copy of a block, as typed, ready to paste elsewhere. */
@@ -321,7 +504,9 @@ export class Workbook {
         ]);
       }
     }
-    this.writeInputs(updates);
+    this.transact("paste", updates.map(([coord]) => coord), () => {
+      this.writeInputs(updates);
+    });
   }
 
   /** Empty every occupied cell in a block, in one recalculation pass. */
@@ -331,7 +516,14 @@ export class Workbook {
     for (const [coord] of this.cells.entriesInRange(range)) {
       updates.push([coord, ""]);
     }
-    if (updates.length > 0) this.writeInputs(updates);
+    if (updates.length === 0) return;
+    this.transact(
+      `clear ${formatRange(range)}`,
+      updates.map(([coord]) => coord),
+      () => {
+        this.writeInputs(updates);
+      },
+    );
   }
 
   /**
@@ -392,7 +584,12 @@ export class Workbook {
    */
   applyStructuralEdit(edit: StructuralEdit): void {
     validateEdit(edit);
+    this.transact(structuralLabel(edit), "sheet", () => {
+      this.rewriteSheet(edit);
+    });
+  }
 
+  private rewriteSheet(edit: StructuralEdit): void {
     const moved: [Coord, CellRecord][] = [];
     for (const [coord, record] of this.cells.entries()) {
       const target = adjustCoord(coord, edit);
@@ -430,7 +627,9 @@ export class Workbook {
 
   /** Define a named constant, usable as a bare word in formulas. */
   setName(name: string, value: Value): void {
-    this.rebindName(this.nameTable.setValue(name, value));
+    this.transact(`name ${name.toUpperCase()}`, [], () => {
+      this.rebindName(this.nameTable.setValue(name, value));
+    });
   }
 
   /**
@@ -440,13 +639,18 @@ export class Workbook {
    * as though the range had been typed out, invalidation included.
    */
   defineName(name: string, target: string): void {
-    this.rebindName(this.nameTable.setReference(name, target));
+    this.transact(`name ${name.toUpperCase()}`, [], () => {
+      this.rebindName(this.nameTable.setReference(name, target));
+    });
   }
 
   /** Remove a name. Formulas that used it fall back to `#NAME?`. */
   deleteName(name: string): boolean {
-    const removed = this.nameTable.delete(name);
-    if (removed) this.rebindName(name.toUpperCase());
+    let removed = false;
+    this.transact(`remove name ${name.toUpperCase()}`, [], () => {
+      removed = this.nameTable.delete(name);
+      if (removed) this.rebindName(name.toUpperCase());
+    });
     return removed;
   }
 
