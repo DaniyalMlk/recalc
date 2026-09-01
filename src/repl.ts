@@ -1,5 +1,14 @@
 import { Workbook, interpretInput } from "./engine/workbook.js";
-import { formatA1, formatRange, iterateRange, parseA1 } from "./engine/reference.js";
+import {
+  MAX_ROWS,
+  formatA1,
+  formatRange,
+  iterateRange,
+  labelToColumn,
+  parseA1,
+} from "./engine/reference.js";
+import { StructureError } from "./engine/structure.js";
+import type { Axis, StructuralOperation } from "./engine/structure.js";
 import { registeredFunctionNames, lookupFunction } from "./functions/index.js";
 import { formatValue } from "./engine/value.js";
 import { NameError, parseTarget } from "./engine/names.js";
@@ -48,6 +57,12 @@ export const HELP = `
     .name Rate = 0.11       name a constant
     .names                  every defined name
     .unname Revenue         remove a name
+
+  ${paint(BOLD, "Rows and columns")}
+    .insertrow 3 [n]        open n blank rows above row 3
+    .deleterow 3 [n]        remove n rows from row 3 down
+    .insertcol C [n]        open n blank columns left of column C
+    .deletecol C [n]        remove n columns from column C right
 
   ${paint(BOLD, "CSV")}
     .csv [formulas]         print the sheet as CSV
@@ -162,6 +177,72 @@ export class ReplSession {
       this.files,
     );
   }
+}
+
+const STRUCTURAL_COMMANDS: readonly [string, Axis, StructuralOperation][] = [
+  [".insertrow", "row", "insert"],
+  [".deleterow", "row", "delete"],
+  [".insertcol", "column", "insert"],
+  [".deletecol", "column", "delete"],
+];
+
+/**
+ * Read the line a structural command names.
+ *
+ * Rows are given the way they are shown, one-based, and columns by their
+ * letter — `.deletecol C` and not `.deletecol 2`. The engine indexes from zero,
+ * so the conversion happens here rather than leaking a second numbering into
+ * what the user types.
+ */
+function parseLineIndex(axis: Axis, text: string): number | null {
+  if (axis === "column") {
+    try {
+      return labelToColumn(text);
+    } catch {
+      return null;
+    }
+  }
+  if (!/^[0-9]{1,7}$/.test(text)) return null;
+  const row = Number(text);
+  if (row < 1 || row > MAX_ROWS) return null;
+  return row - 1;
+}
+
+function structuralEdit(
+  book: Workbook,
+  tail: string,
+  axis: Axis,
+  operation: StructuralOperation,
+): string {
+  const usageAt = axis === "row" ? "3" : "C";
+  const command = `.${operation}${axis === "row" ? "row" : "col"}`;
+  const [where, howMany] = splitArgs(tail);
+  if (where === undefined) {
+    return paint(RED, `  usage: ${command} ${usageAt} [n]`);
+  }
+
+  const at = parseLineIndex(axis, where);
+  if (at === null) {
+    return paint(RED, `  ${where} is not a ${axis}`);
+  }
+
+  const count = howMany === undefined ? 1 : Number(howMany);
+  if (!Number.isInteger(count) || count < 1) {
+    return paint(RED, `  count must be a positive whole number: ${howMany}`);
+  }
+
+  try {
+    book.applyStructuralEdit({ axis, operation, at, count });
+  } catch (error) {
+    if (error instanceof StructureError) return paint(RED, `  ${error.message}`);
+    throw error;
+  }
+
+  const noun = `${axis}${count === 1 ? "" : "s"}`;
+  const label = axis === "row" ? String(at + 1) : where.toUpperCase();
+  return operation === "insert"
+    ? `  ${count} ${noun} inserted at ${label}`
+    : `  ${count} ${noun} deleted from ${label}`;
 }
 
 /** Split a command tail into its whitespace-separated arguments. */
@@ -302,6 +383,11 @@ function handle(
     return book.deleteName(name)
       ? `  removed ${name.toUpperCase()}`
       : paint(RED, `  no name called ${name}`);
+  }
+
+  for (const [command, axis, operation] of STRUCTURAL_COMMANDS) {
+    if (line !== command && !line.startsWith(`${command} `)) continue;
+    return structuralEdit(book, line.slice(command.length), axis, operation);
   }
 
   if (line === ".csv" || line.startsWith(".csv ")) {

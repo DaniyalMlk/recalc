@@ -336,3 +336,69 @@ describe("name commands", () => {
     expect(one(".name broken")).toContain("usage");
   });
 });
+
+describe("rows and columns", () => {
+  const sheet = ["A1 = 1", "A2 = 2", "A3 = 3", "C1 = =SUM(A1:A3)"];
+
+  it("inserts a row and reports what it did", () => {
+    expect(one(".insertrow 2", sheet)).toContain("1 row inserted at 2");
+  });
+
+  it("moves the cells the insertion pushed down", () => {
+    expect(one("A4", [...sheet, ".insertrow 2"])).toContain("3");
+  });
+
+  it("stretches a range an insertion lands inside", () => {
+    expect(one("C1", [...sheet, ".insertrow 2"])).toContain("=SUM(A1:A4)");
+  });
+
+  it("inserts several rows at once", () => {
+    expect(one(".insertrow 2 3", sheet)).toContain("3 rows inserted at 2");
+  });
+
+  it("deletes a row and shrinks the range", () => {
+    expect(one("C1", [...sheet, ".deleterow 2"])).toContain("=SUM(A1:A2)");
+  });
+
+  it("leaves #REF! where a deleted cell was referenced", () => {
+    const before = ["A1 = 5", "C1 = =A2*2", "A2 = 7"];
+    expect(one("C1", [...before, ".deleterow 2"])).toContain("#REF!");
+  });
+
+  it("inserts a column by its letter", () => {
+    expect(one(".insertcol B", sheet)).toContain("1 column inserted at B");
+    expect(one("D1", [...sheet, ".insertcol B"])).toContain("=SUM(A1:A3)");
+  });
+
+  it("deletes a column by its letter", () => {
+    expect(one(".deletecol A", sheet)).toContain("1 column deleted from A");
+  });
+
+  it("accepts a lower-case column letter", () => {
+    expect(one(".insertcol b", sheet)).toContain("inserted at B");
+  });
+
+  it("rejects a row that is not a number", () => {
+    expect(one(".insertrow zz")).toContain("not a row");
+  });
+
+  it("rejects row zero, since rows are numbered from one", () => {
+    expect(one(".deleterow 0")).toContain("not a row");
+  });
+
+  it("rejects a count that is not a positive whole number", () => {
+    expect(one(".deleterow 1 0")).toContain("positive whole number");
+    expect(one(".deleterow 1 x")).toContain("positive whole number");
+  });
+
+  it("reports usage when the line is missing", () => {
+    expect(one(".insertrow")).toContain("usage");
+    expect(one(".deletecol")).toContain("usage");
+  });
+
+  it("lists the structural commands in the help text", () => {
+    const help = one(".help");
+    expect(help).toContain(".insertrow");
+    expect(help).toContain(".deletecol");
+  });
+});
