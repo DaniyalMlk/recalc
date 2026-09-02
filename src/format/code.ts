@@ -86,6 +86,8 @@ export interface FormatSection {
   readonly percents: number;
   /** Digit positions in the exponent, when the section is scientific. */
   readonly exponentDigits: number;
+  /** Whether the section contains an `@` placeholder. */
+  readonly hasTextPlaceholder: boolean;
   /** True when the section contains no digit positions and no `@`. */
   readonly literalOnly: boolean;
 }
@@ -211,27 +213,25 @@ function parseSection(
   let seenExponent = false;
   let hasText = false;
 
-  // Trailing commas scale by a thousand each, but only the run that sits at
-  // the very end of the numeric part counts. Tracked as a run length that is
-  // reset by anything that is not a comma, so `#,##0,,` scales by a million
-  // while `#,##0` does not scale at all.
-  let trailingCommas = 0;
-  let scaleBy = 0;
+  /**
+   * A comma's meaning depends on what comes after it: between digit positions
+   * it separates thousands, after the last one it divides by a thousand. That
+   * cannot be decided while reading it, so every comma is emitted as a `group`
+   * token and the ones that turn out to sit past the final digit are converted
+   * to scaling once the section has been read.
+   */
+  let lastDigitToken = -1;
 
   let i = from;
   while (i < to) {
     const char = source[i]!;
-
-    if (char !== ",") {
-      scaleBy += trailingCommas;
-      trailingCommas = 0;
-    }
 
     switch (char) {
       case "0":
       case "#":
       case "?": {
         const pad = char === "0" ? "zero" : char === "#" ? "none" : "space";
+        lastDigitToken = tokens.length;
         tokens.push({ kind: "digit", pad });
         if (seenExponent) {
           exponentDigits += 1;
@@ -256,14 +256,11 @@ function parseSection(
       }
 
       case ",": {
-        // A comma between digit positions groups; one trailing the digits
-        // scales. Which it is only becomes clear once the rest is read, so
-        // record both readings and resolve at the end.
-        if (intDigits > 0 && !seenPoint) {
-          grouped = true;
+        if (intDigits + decimals > 0) {
           tokens.push({ kind: "group" });
-          trailingCommas += 1;
         } else {
+          // Nothing numeric precedes it, so there is nothing to group or
+          // scale and the comma is just punctuation: `"(",#0`.
           tokens.push({ kind: "literal", text: "," });
         }
         i += 1;
@@ -386,21 +383,22 @@ function parseSection(
     }
   }
 
-  scaleBy += trailingCommas;
-
-  // A comma that turned out to be trailing is a scale, not a separator, and
-  // must not also print. Drop exactly the trailing run from the tokens.
-  let tokenList: FormatToken[] = tokens;
-  if (trailingCommas > 0) {
-    let cut = tokenList.length;
-    let remaining = trailingCommas;
-    while (cut > 0 && remaining > 0 && tokenList[cut - 1]!.kind === "group") {
-      cut -= 1;
-      remaining -= 1;
+  // Every comma past the final digit position is a scale. Drop those tokens
+  // so they do not also print; what remains is grouping.
+  let scaleBy = 0;
+  const tokenList: FormatToken[] = [];
+  tokens.forEach((token, index) => {
+    if (token.kind !== "group") {
+      tokenList.push(token);
+      return;
     }
-    tokenList = tokenList.slice(0, cut);
-    grouped = tokenList.some((token) => token.kind === "group");
-  }
+    if (index > lastDigitToken) {
+      scaleBy += 1;
+      return;
+    }
+    grouped = true;
+    tokenList.push(token);
+  });
 
   return {
     tokens: tokenList,
@@ -412,6 +410,7 @@ function parseSection(
     scaleBy,
     percents,
     exponentDigits,
+    hasTextPlaceholder: hasText,
     literalOnly: intDigits + decimals === 0 && !hasText,
   };
 }
