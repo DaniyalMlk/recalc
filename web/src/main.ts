@@ -30,6 +30,7 @@ const elements: AppElements = {
   clearSheet: need<HTMLButtonElement>("action-clear"),
   undo: need<HTMLButtonElement>("action-undo"),
   redo: need<HTMLButtonElement>("action-redo"),
+  formatButton: need<HTMLButtonElement>("action-format"),
   importCsv: need<HTMLButtonElement>("action-import"),
   exportCsv: need<HTMLButtonElement>("action-export"),
   fileInput: need<HTMLInputElement>("file-input"),

@@ -8,6 +8,7 @@ import {
 } from "../../../src/engine/reference.js";
 import type { Coord } from "../../../src/engine/reference.js";
 import { StructureError } from "../../../src/engine/structure.js";
+import type { Value } from "../../../src/engine/value.js";
 import { Workbook } from "../../../src/engine/workbook.js";
 import type { Clipboard } from "../../../src/engine/workbook.js";
 import { CsvError, exportCsv, importCsv } from "../../../src/io/csv.js";
@@ -18,6 +19,14 @@ import {
   rowCommands,
 } from "../core/commands.js";
 import type { Command, CommandContext, CommandId } from "../core/commands.js";
+import {
+  describeFormat,
+  formatCommands,
+  formatPreset,
+  isFormatPresetId,
+  selectionFormat,
+} from "../core/formats.js";
+import type { SelectionFormat } from "../core/formats.js";
 import { charsForWidth, displayValue } from "../core/display.js";
 import { highlightFormula } from "../core/highlight.js";
 import type { Highlight } from "../core/highlight.js";
@@ -27,6 +36,7 @@ import { rectContains } from "../core/selection.js";
 import type { CellRect, Direction } from "../core/selection.js";
 import { pageStep } from "../core/viewport.js";
 import {
+  SAMPLE_FORMATS,
   SAMPLE_NAMES,
   SAMPLE_SHEET,
   SAMPLE_WIDTHS,
@@ -104,6 +114,7 @@ export interface AppElements {
   readonly clearSheet: HTMLButtonElement;
   readonly undo: HTMLButtonElement;
   readonly redo: HTMLButtonElement;
+  readonly formatButton: HTMLButtonElement;
   readonly importCsv: HTMLButtonElement;
   readonly exportCsv: HTMLButtonElement;
   readonly fileInput: HTMLInputElement;
@@ -191,15 +202,57 @@ export class App {
 
   // ------------------------------------------------------------- painting --
 
+  /**
+   * What one cell looks like.
+   *
+   * The two paths are not interchangeable. Without a format the grid shrinks
+   * the number to the column, hiding representation noise and trimming digits
+   * until it fits — a general format is a rendering decision the *view* makes.
+   * With a format the user has said exactly what they want to see, so the text
+   * is taken verbatim and allowed to overflow rather than being second-guessed
+   * by a column width.
+   *
+   * The alignment class comes from the value in both cases, so a number laid
+   * out as `(1,234)` still sits against the right edge with its column.
+   */
   private paint(row: number, col: number): CellPaint {
     const address = this.address({ row, col });
     const value = this.workbook.getValue(address);
-    const display = displayValue(value, charsForWidth(this.cols.sizeOf(col)));
+    const kind = displayValue(value).kind;
+    const code = this.workbook.formatOf(address);
+    if (code === null) {
+      const display = displayValue(value, charsForWidth(this.cols.sizeOf(col)));
+      return {
+        text: display.text,
+        kind: display.kind,
+        isFormula: this.workbook.getFormula(address) !== null,
+        colour: null,
+      };
+    }
+    const formatted = this.workbook.getFormatted(address);
     return {
-      text: display.text,
-      kind: display.kind,
+      text: formatted.text,
+      kind,
       isFormula: this.workbook.getFormula(address) !== null,
+      colour: formatted.colour === null ? null : `--format-${formatted.colour}`,
     };
+  }
+
+  /** The value in the active cell, which the format previews are drawn on. */
+  private activeValue(): Value {
+    return this.workbook.getValue(this.address(this.selection.active));
+  }
+
+  /** The format code shared by the selection, or `"mixed"`. */
+  private currentFormat(): SelectionFormat {
+    const rect = this.selection.rect;
+    const codes: (string | null)[] = [];
+    for (let row = rect.top; row <= rect.bottom; row += 1) {
+      for (let col = rect.left; col <= rect.right; col += 1) {
+        codes.push(this.workbook.formatOf({ row, col }));
+      }
+    }
+    return selectionFormat(codes);
   }
 
   /**
@@ -417,6 +470,14 @@ export class App {
     return `${from}:${to}`;
   }
 
+  /** The selection as it should read in a message: `B7` or `B7:G13`. */
+  private selectedLabel(): string {
+    const rect = this.selection.rect;
+    return this.selection.isSingle
+      ? this.address({ row: rect.top, col: rect.left })
+      : this.selectedBlock();
+  }
+
   private selectionHasContent(): boolean {
     for (const coord of this.selection.cells()) {
       if (this.workbook.has(this.address(coord))) return true;
@@ -449,6 +510,22 @@ export class App {
     const rect = this.selection.rect;
     const rows = rect.bottom - rect.top + 1;
     const cols = rect.right - rect.left + 1;
+
+    if (isFormatPresetId(id)) {
+      const preset = formatPreset(id);
+      this.workbook.setFormat(this.selectedBlock(), preset.code);
+      const where = this.selectedLabel();
+      this.lastRecalc =
+        preset.code === ""
+          ? `cleared the format on ${where}`
+          : `formatted ${where} as ${preset.label.toLowerCase()}`;
+      this.afterCommand(id);
+      // The menu can be opened from the toolbar, which takes focus off the
+      // grid. Handing it back is what keeps the next arrow key or Ctrl+Z
+      // going to the sheet rather than to a button.
+      this.el.body.focus();
+      return;
+    }
 
     try {
       switch (id) {
@@ -512,6 +589,11 @@ export class App {
       this.lastRecalc = error.message;
     }
 
+    this.afterCommand(id);
+  }
+
+  /** Put the screen back in step with the sheet after a command ran. */
+  private afterCommand(id: CommandId): void {
     // A structural edit can move the cell the clipboard was taken from, so the
     // outline would point at the wrong block; the copy itself stays usable.
     if (id.startsWith("insert-") || id.startsWith("delete-") || id === "cut") {
@@ -582,8 +664,35 @@ export class App {
     if (target.kind === "row") groups.push(rowCommands(context));
     if (target.kind === "column") groups.push(columnCommands(context));
     groups.push(editCommands(context));
+    groups.push(
+      formatCommands(context, this.currentFormat(), this.activeValue()),
+    );
     groups.push(historyCommands(context));
     this.menu.show(groups, x, y);
+  }
+
+  /**
+   * Drop the format menu under its toolbar button.
+   *
+   * Anchored to the button's bottom-left corner rather than to the pointer,
+   * because a menu opened from a button belongs to the button: opening at the
+   * cursor would put it in a different place each time the same control is
+   * pressed.
+   */
+  private openFormatMenu(): void {
+    this.commitEdit();
+    const box = this.el.formatButton.getBoundingClientRect();
+    this.menu.show(
+      [
+        formatCommands(
+          this.commandContext(),
+          this.currentFormat(),
+          this.activeValue(),
+        ),
+      ],
+      box.left,
+      box.bottom + 4,
+    );
   }
 
   private refreshToolbar(): void {
@@ -613,6 +722,9 @@ export class App {
       this.workbook.defineName(name, target);
     }
     this.workbook.setCells({ ...SAMPLE_SHEET, ...sampleFormulas() });
+    for (const [block, code] of Object.entries(SAMPLE_FORMATS)) {
+      this.workbook.setFormat(block, code);
+    }
 
     this.setCopied(null);
     this.workbook.clearHistory();
@@ -770,6 +882,12 @@ export class App {
     this.el.loadSample.addEventListener("click", () => {
       this.loadSample();
       this.el.body.focus();
+    });
+    this.el.formatButton.addEventListener("click", (event) => {
+      // The window-level dismiss handler would close the menu on the very
+      // press that opened it.
+      event.stopPropagation();
+      this.openFormatMenu();
     });
     this.el.clearSheet.addEventListener("click", () => {
       this.clearSheet();

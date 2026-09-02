@@ -162,8 +162,19 @@ export class ContextMenu {
     node.type = "button";
     node.className = "menu__item";
     node.dataset["command"] = command.id;
-    node.setAttribute("role", "menuitem");
     if (!command.enabled) node.setAttribute("disabled", "");
+
+    // An item that reports whether it is in effect is one of a set of
+    // alternatives, so it takes the radio role. A tick drawn beside a plain
+    // menuitem is visible and says nothing to a screen reader.
+    if (command.checked === undefined) {
+      node.setAttribute("role", "menuitem");
+    } else {
+      node.setAttribute("role", "menuitemradio");
+      node.setAttribute("aria-checked", String(command.checked));
+      node.classList.add("menu__item--choice");
+      node.classList.toggle("is-checked", command.checked);
+    }
 
     const label = document.createElement("span");
     label.textContent = command.label;

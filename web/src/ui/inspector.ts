@@ -27,6 +27,14 @@ const EMPTY_SHEET = `
   recalculates the cells that depend on it and nothing else.</p>
 </div>`;
 
+function formattedEmptySheet(code: string): string {
+  return `
+<div class="empty">
+  <p>Empty, formatted as <code>${escape(code)}</code>.</p>
+  <p>Whatever is typed here will be shown through that format.</p>
+</div>`;
+}
+
 export class Inspector {
   constructor(
     private readonly el: InspectorElements,
@@ -51,8 +59,14 @@ export class Inspector {
     const kind = kindOf(value);
     this.el.kind.textContent = kind;
 
+    const code = workbook.formatOf(address);
+
     if (!workbook.has(address)) {
-      this.el.body.innerHTML = EMPTY_SHEET;
+      // An empty cell can still carry a format, waiting for whatever is typed
+      // into it. Saying so is the difference between "nothing here" and
+      // "nothing here yet, and it will be money when there is".
+      this.el.body.innerHTML =
+        code === null ? EMPTY_SHEET : formattedEmptySheet(code);
       return;
     }
 
@@ -77,6 +91,10 @@ export class Inspector {
           isFormulaError(value) ? "field__value--error" : "",
         ),
       );
+    }
+
+    if (code !== null) {
+      parts.push(field("Format", escape(code)));
     }
 
     if (isFormulaError(value) && value.detail !== undefined) {

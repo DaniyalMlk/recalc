@@ -26,6 +26,21 @@
   --danger: #9f2f2d;
   --danger-soft: #fbeae9;
 
+  /*
+   * The eight colours a number format may name. Read off the sheet's own ink
+   * rather than off the sRGB primaries: `[Red]` on a negative has to sit
+   * beside black digits in the same column without shouting, and #ff0000 next
+   * to #23211e reads as an alert rather than as an accounting convention.
+   */
+  --format-black: #23211e;
+  --format-blue: #1f6c9f;
+  --format-cyan: #17706e;
+  --format-green: #2c6a34;
+  --format-magenta: #93357c;
+  --format-red: #9f2f2d;
+  --format-white: #f7f6f3;
+  --format-yellow: #8a6410;
+
   /* Reference outline palette, matched between the formula bar and the grid. */
   --ref-0: #1f6c9f;
   --ref-1: #9a5b1b;
@@ -219,6 +234,34 @@ body {
   /* Lift the hovered half so its border is not painted over by its neighbour. */
   position: relative;
   z-index: 1;
+}
+
+/*
+ * A button that opens a menu says so twice: an icon for what it acts on and a
+ * caret for the fact that there is more behind it. Without the caret it reads
+ * as an action that has already happened by the time the menu appears.
+ */
+.button--menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.button--menu svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+  color: var(--ink-mute);
+}
+
+.button--menu:hover svg {
+  color: var(--ink-soft);
+}
+
+.button__caret {
+  width: 12px;
+  height: 12px;
+  margin-left: -1px;
 }
 
 .button--icon {
@@ -859,6 +902,32 @@ body {
 .menu__item[disabled] {
   color: var(--ink-mute);
   cursor: default;
+}
+
+/*
+ * A choice item reserves the tick column whether or not it is ticked, so the
+ * labels in a set of alternatives stay on one left edge instead of shifting
+ * sideways as the selection moves between them.
+ */
+.menu__item--choice {
+  padding-left: 22px;
+  position: relative;
+}
+
+.menu__item--choice.is-checked::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  width: 8px;
+  height: 4px;
+  border-left: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-70%) rotate(-45deg);
+}
+
+.menu__item--choice.is-checked {
+  color: var(--accent);
 }
 
 .menu__hint {
