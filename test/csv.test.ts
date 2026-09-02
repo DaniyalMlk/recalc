@@ -315,3 +315,38 @@ describe("CSV against a workbook", () => {
     expect(exportCsv(book, { newline: "\n" })).toBe('"first\nsecond",x');
   });
 });
+
+describe("exporting through the number formats", () => {
+  function formatted() {
+    const book = new Workbook();
+    book.setCells({ A1: "Capex", B1: -2400000, A2: "Rate", B2: 0.11 });
+    book.setFormat("B1", "#,##0;(#,##0)");
+    book.setFormat("B2", "0.0%");
+    return book;
+  }
+
+  it("writes the underlying value by default, so it can be read back", () => {
+    expect(exportCsv(formatted())).toBe("Capex,-2400000\r\nRate,0.11");
+  });
+
+  it("writes what the cell shows in display mode", () => {
+    expect(exportCsv(formatted(), { mode: "display" })).toBe(
+      // The comma inside the formatted number is what forces the quoting.
+      'Capex,"(2,400,000)"\r\nRate,11.0%',
+    );
+  });
+
+  it("still writes the input in formulas mode", () => {
+    expect(exportCsv(formatted(), { mode: "formulas" })).toBe(
+      "Capex,-2400000\r\nRate,0.11",
+    );
+  });
+
+  it("leaves a formatted column formatted when data is imported into it", () => {
+    const book = new Workbook();
+    book.setFormat("A1:A3", "#,##0");
+    importCsv(book, "1000\n2000\n3000", { at: "A1" });
+    expect(book.getDisplay("A2")).toBe("2,000");
+    expect(book.formatOf("A3")).toBe("#,##0");
+  });
+});
