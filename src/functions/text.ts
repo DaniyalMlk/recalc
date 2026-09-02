@@ -1,6 +1,8 @@
-import { NA_ERROR, VALUE_ERROR, isFormulaError } from "../engine/errors.js";
+import { NA_ERROR, VALUE_ERROR, err, isFormulaError } from "../engine/errors.js";
 import { parseNumericText, toText } from "../engine/value.js";
 import type { Value } from "../engine/value.js";
+import { FormatCodeError } from "../format/code.js";
+import { formatWith } from "../format/render.js";
 import {
   argValue,
   defineFunction,
@@ -276,4 +278,28 @@ defineFunction({
   minArgs: 0,
   maxArgs: 0,
   call: () => NA_ERROR,
+});
+
+defineFunction({
+  name: "TEXT",
+  description: "Formats a value with a number format code.",
+  minArgs: 2,
+  maxArgs: 2,
+  call(args) {
+    const code = textArg(args[1]);
+    if (typeof code !== "string") return code;
+    const value = argValue(args[0]!);
+    if (isFormulaError(value)) return value;
+    try {
+      return formatWith(code, value).text;
+    } catch (error) {
+      // A malformed code is a mistake in the formula, not a crash. `#VALUE!`
+      // is what a spreadsheet answers, and the parser's message rides along
+      // as the detail so tooling can say what was actually wrong with it.
+      if (error instanceof FormatCodeError) {
+        return err("#VALUE!", error.message);
+      }
+      throw error;
+    }
+  },
 });

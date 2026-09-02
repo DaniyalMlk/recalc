@@ -81,3 +81,19 @@ tree green and the public API usable.
 - [x] Fill and clipboard shortcuts on a selected block
 - [x] Undo and redo wired to the keyboard
 - [x] The toolbar reflects what the current selection can do
+
+## Phase 11 — Number formats
+
+- [x] Format code parser: sections, digit placeholders, literals, escapes, colours
+- [x] Decimal rounding that matches what a spreadsheet shows, not what the float holds
+- [x] Section selection by sign, with the negative branch owning its own sign
+- [x] Grouping, percent and thousands scaling, scientific notation
+- [x] `TEXT`, built on the same compiler as the cell display
+
+## Phase 12 — Formats on the sheet
+
+- [ ] A format applied to a cell or a block, stored beside the values
+- [ ] Formats follow structural edits, fills and pastes
+- [ ] Formatting recorded in the edit journal, so undo reaches it
+- [ ] Shell commands to apply, inspect and clear a format
+- [ ] Format menu in the grid, with alignment and negative colouring

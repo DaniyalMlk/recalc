@@ -15,12 +15,14 @@ formula depends on, and recalculates only what an edit actually invalidated.
 
 ## Status
 
-Every phase in [ROADMAP.md](ROADMAP.md) is complete: the formula grammar, the
-reference model, the dependency graph, the evaluator, a function library of 97
-functions including a financial pack, CSV interchange, named ranges, a
+Phases 1 to 11 in [ROADMAP.md](ROADMAP.md) are complete: the formula grammar,
+the reference model, the dependency graph, the evaluator, a function library of
+98 functions including a financial pack, CSV interchange, named ranges, a
 benchmark harness, structural editing that rewrites every formula in the sheet
-when rows and columns move, block editing with fill, clipboard and undo, and a
-web interface where all of it is reachable from a virtualised grid.
+when rows and columns move, block editing with fill, clipboard and undo, a web
+interface where all of it is reachable from a virtualised grid, and a number
+format compiler. Phase 12 attaches formats to cells; until it lands they are
+reachable through `TEXT` and the library.
 
 ## Using it as a library
 
@@ -75,6 +77,41 @@ sheet.getInput("D1");                    // "=C1*0.2"
 sheet.undoLabel;                         // "paste"
 sheet.undo();                            // all three pasted cells, in one step
 ```
+
+## Number formats
+
+A format code is compiled once into digit positions, literals and up to four
+sections, then applied to values as often as needed:
+
+```ts
+import { formatWith, parseFormatCode, applyFormat } from "recalc";
+
+formatWith("#,##0.00", 237560.620691).text;   // "237,560.62"
+formatWith("0.0%", 0.1356486793).text;        // "13.6%"
+formatWith('#,##0.0,,"M"', 2400000).text;     // "2.4M"
+formatWith("0.00E+00", 0.000123).text;        // "1.23E-04"
+
+// Sections split by sign: positive; negative; zero; text.
+formatWith('#,##0;[Red](#,##0);"—"', -1234);  // { text: "(1,234)", colour: "red" }
+
+// Compile once when the same code is applied repeatedly.
+const code = parseFormatCode("$#,##0.00");
+applyFormat(code, -1234.5).text;              // "-$1,234.50"
+```
+
+The same compiler backs the `TEXT` worksheet function, so what a formula
+produces and what a cell will display cannot drift apart:
+
+```
+=TEXT(B15, "$#,##0")     →  "$237,561"
+=TEXT(B16, "0.0%")       →  "13.6%"
+```
+
+Supported: digit placeholders `0` `#` `?`, a decimal point, grouping and
+thousands-scaling commas, `%`, quoted literals, `\` escapes, `_` width skips,
+`*` fills, `@` for text, `[Red]`-style colours, and `E+00` scientific codes.
+Date and fraction codes are rejected with the offset of the offending
+character rather than silently mis-formatted.
 
 ## Using it from the browser
 
@@ -325,10 +362,12 @@ this workload, which is the price of the extra indirection at definition time.
   position is `#VALUE!` rather than a silent pick from the calling row.
 - Omitted arguments (`IF(A1,,2)`) are a parse error.
 - Only one sheet; there are no cross-sheet references.
-- No number formats: the grid shows the general format only, so a rate reads as
-  `0.1356486793` rather than `13.56%`.
-- The grid has no undo, no clipboard and no fill handle, and names can only be
-  defined from the library or the shell, not from the grid.
+- Number formats exist as a library and as `TEXT`, but are not yet attached to
+  cells, so the grid still shows the general format and a rate reads as
+  `0.1356486793` rather than `13.6%`.
+- Date and fraction format codes are rejected rather than supported: the value
+  model has no date serial type, so `yyyy-mm-dd` would have nothing to format.
+- Names can only be defined from the library or the shell, not from the grid.
 - Reference highlighting outlines only references written out in the formula.
   A name is underlined in the formula bar and resolved in the inspector, but
   the cells behind it are not outlined on the grid.
