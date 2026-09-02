@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { err } from "../src/engine/errors.js";
+import { err, isFormulaError } from "../src/engine/errors.js";
+import { Workbook } from "../src/engine/workbook.js";
 import type { Value } from "../src/engine/value.js";
 import { formatWith } from "../src/format/render.js";
 import { roundToPlaces, base10Exponent } from "../src/format/decimal.js";
@@ -195,5 +196,43 @@ describe("decimal rounding helper", () => {
     expect(base10Exponent(999.9)).toBe(2);
     expect(base10Exponent(0.001)).toBe(-3);
     expect(base10Exponent(0)).toBe(0);
+  });
+});
+
+describe("the TEXT function", () => {
+  const book = new Workbook();
+  const evaluate = (formula: string): Value => {
+    book.setCell("Z90", formula);
+    return book.getValue("Z90");
+  };
+
+  it("formats a number with a code", () => {
+    expect(evaluate('=TEXT(1234.5,"#,##0.00")')).toBe("1,234.50");
+  });
+
+  it("uses the same section rules as a cell format", () => {
+    expect(evaluate('=TEXT(-8,"0;(0)")')).toBe("(8)");
+  });
+
+  it("reads its arguments from cells", () => {
+    // The code needs the apostrophe escape: typed bare, `0.0%` is a number.
+    book.setCells({ A1: 0.075, B1: "'0.0%" });
+    expect(evaluate("=TEXT(A1,B1)")).toBe("7.5%");
+  });
+
+  it("returns #VALUE! for a code it cannot compile", () => {
+    const value = evaluate('=TEXT(1,"yyyy")');
+    expect(isFormulaError(value) && value.code).toBe("#VALUE!");
+    expect(isFormulaError(value) && value.detail).toMatch(/date and time/);
+  });
+
+  it("propagates an error argument", () => {
+    const value = evaluate('=TEXT(1/0,"0.00")');
+    expect(isFormulaError(value) && value.code).toBe("#DIV/0!");
+  });
+
+  it("is arity checked", () => {
+    const value = evaluate('=TEXT(1)');
+    expect(isFormulaError(value) && value.code).toBe("#VALUE!");
   });
 });

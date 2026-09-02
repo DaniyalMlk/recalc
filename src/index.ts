@@ -21,5 +21,6 @@ export type {
   CellRecord,
   Clipboard,
 } from "./engine/workbook.js";
+export * from "./format/index.js";
 export * from "./functions/index.js";
 export * from "./io/csv.js";
