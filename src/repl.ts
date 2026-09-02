@@ -10,11 +10,12 @@ import {
   parseA1,
   parseA1Range,
 } from "./engine/reference.js";
+import type { CellRef } from "./engine/reference.js";
 import { StructureError } from "./engine/structure.js";
 import type { Axis, StructuralOperation } from "./engine/structure.js";
 import { registeredFunctionNames, lookupFunction } from "./functions/index.js";
-import { formatValue } from "./engine/value.js";
 import { NameError, parseTarget } from "./engine/names.js";
+import { FormatCodeError, isGeneralFormat } from "./format/code.js";
 import { exportCsv, importCsv } from "./io/csv.js";
 
 // Written as an escape sequence so the source stays plain text.
@@ -55,6 +56,12 @@ export const HELP = `
     .reset                  start an empty sheet
     .quit
 
+  ${paint(BOLD, "Number formats")}
+    .format B2:B13 = #,##0.00   apply a format code to a cell or block
+    .format B2                  show the code on a cell
+    .format B2 = General        back to the general format
+    .formats                    every cell carrying a format
+
   ${paint(BOLD, "Names")}
     .name Revenue = B2:B13  name a cell or a range
     .name Rate = 0.11       name a constant
@@ -75,9 +82,9 @@ export const HELP = `
     .deletecol C [n]        remove n columns from column C right
 
   ${paint(BOLD, "CSV")}
-    .csv [formulas]         print the sheet as CSV
+    .csv [formulas|display] print the sheet as CSV
     .import data.csv [A1]   read a CSV file into the sheet
-    .export out.csv [formulas]
+    .export out.csv [formulas|display]
                             write the sheet to a CSV file
 `;
 
@@ -133,14 +140,18 @@ function loadDemo(book: Workbook): void {
 function describeCell(book: Workbook, address: string): string {
   const formula = book.getFormula(address);
   const value = book.getValue(address);
-  const rendered = formatValue(value);
+  // The shell shows what the cell shows, format included, so what is printed
+  // here cannot disagree with what a grid would paint.
+  const rendered = book.getDisplay(address);
   const shown = rendered === "" ? paint(DIM, "(blank)") : rendered;
   const detail =
     typeof value === "object" && value !== null && "detail" in value
       ? paint(DIM, `  ${value.detail ?? ""}`)
       : "";
   const source = formula === null ? "" : paint(DIM, `   ${formula}`);
-  return `  ${paint(CYAN, address)}  ${shown}${source}${detail}`;
+  const code = book.formatOf(address);
+  const shownCode = code === null ? "" : paint(DIM, `   [${code}]`);
+  return `  ${paint(CYAN, address)}  ${shown}${source}${shownCode}${detail}`;
 }
 
 function listCells(book: Workbook): string[] {
@@ -283,6 +294,21 @@ function structuralEdit(
  * instead of a stack trace: a mistyped address is a normal thing to do at a
  * prompt, not a programmer error.
  */
+/** How a block reads in a message: a one-cell block reads as the cell. */
+function blockLabel(range: { start: CellRef; end: CellRef }): string {
+  return range.start.col === range.end.col && range.start.row === range.end.row
+    ? formatA1(range.start)
+    : formatRange(range);
+}
+
+/** Which of the three export modes a command tail asks for. */
+function exportMode(tail: string): "values" | "formulas" | "display" {
+  const word = tail.trim().toLowerCase();
+  if (word === "formulas") return "formulas";
+  if (word === "display") return "display";
+  return "values";
+}
+
 function readBlock(text: string) {
   try {
     return parseA1Range(text);
@@ -435,6 +461,53 @@ function handle(
     return `  pasted ${held.width}x${held.height} at ${target.toUpperCase()}`;
   }
 
+  if (line === ".formats") {
+    const entries = book.formatEntries();
+    if (entries.length === 0) return paint(DIM, "  no formats applied");
+    const width = Math.max(...entries.map((entry) => entry.address.length));
+    return entries
+      .map(
+        (entry) =>
+          `  ${paint(CYAN, entry.address.padEnd(width))}  ${entry.code}`,
+      )
+      .join("\n");
+  }
+
+  if (line === ".format" || line.startsWith(".format ")) {
+    const tail = line.slice(7).trim();
+    if (tail === "") return paint(RED, "  usage: .format B2:B13 = #,##0.00");
+
+    const equals = tail.indexOf("=");
+    // With no `=` this is a question rather than an instruction: show the
+    // code on that cell instead of applying one.
+    if (equals < 0) {
+      if (!ADDRESS.test(tail)) return paint(RED, `  ${tail} is not a cell`);
+      const code = book.formatOf(tail);
+      return code === null
+        ? paint(DIM, `  ${tail.toUpperCase()} uses the general format`)
+        : `  ${paint(CYAN, tail.toUpperCase())}  ${code}`;
+    }
+
+    const target = tail.slice(0, equals).trim();
+    const code = tail.slice(equals + 1).trim();
+    const range = readBlock(target);
+    if (range === null) return paint(RED, `  ${target} is not a cell or block`);
+
+    try {
+      book.setFormat(range, code);
+    } catch (error) {
+      if (error instanceof FormatCodeError) {
+        return paint(RED, `  ${error.message} (at ${error.offset})`);
+      }
+      throw error;
+    }
+
+    const where = blockLabel(range);
+    return code === "" || isGeneralFormat(code)
+      ? `  cleared the format on ${where}`
+      : `  formatted ${where} as ${code}`;
+  }
+
   if (line === ".names") {
     const names = book.names();
     if (names.length === 0) return paint(DIM, "  no names defined");
@@ -484,8 +557,10 @@ function handle(
   }
 
   if (line === ".csv" || line.startsWith(".csv ")) {
-    const mode = line.slice(4).trim() === "formulas" ? "formulas" : "values";
-    const text = exportCsv(book, { mode, newline: "\n" });
+    const text = exportCsv(book, {
+      mode: exportMode(line.slice(4)),
+      newline: "\n",
+    });
     return text === "" ? paint(DIM, "  (empty sheet)") : text;
   }
 
@@ -507,9 +582,7 @@ function handle(
     if (path === undefined) {
       return paint(RED, "  usage: .export out.csv [formulas]");
     }
-    const text = exportCsv(book, {
-      mode: mode === "formulas" ? "formulas" : "values",
-    });
+    const text = exportCsv(book, { mode: exportMode(mode ?? "") });
     files.write(path, text);
     return `  ${book.cellCount} cell(s) to ${path}`;
   }

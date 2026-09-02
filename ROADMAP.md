@@ -92,8 +92,9 @@ tree green and the public API usable.
 
 ## Phase 12 — Formats on the sheet
 
-- [ ] A format applied to a cell or a block, stored beside the values
-- [ ] Formats follow structural edits, fills and pastes
-- [ ] Formatting recorded in the edit journal, so undo reaches it
-- [ ] Shell commands to apply, inspect and clear a format
-- [ ] Format menu in the grid, with alignment and negative colouring
+- [x] A format applied to a cell or a block, stored beside the values
+- [x] Formats follow structural edits, fills and pastes
+- [x] Formatting recorded in the edit journal, so undo reaches it
+- [x] Shell commands to apply, inspect and clear a format
+- [x] Format menu in the grid, previewing each choice on the selected value
+- [x] CSV export of the sheet as it is shown, alongside values and formulas

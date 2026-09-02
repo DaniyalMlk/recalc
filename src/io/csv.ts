@@ -183,8 +183,15 @@ export interface ImportOptions {
 }
 
 export interface ExportOptions {
-  /** What to write for a cell holding a formula. */
-  readonly mode?: "values" | "formulas";
+  /**
+   * What to write for each cell.
+   *
+   * `values` writes the underlying number, which is what another program
+   * wants to read. `display` writes what the cell shows, number format and
+   * all, which is what a person wants to read — and does not round-trip,
+   * since `(2,400,000)` will not parse back into -2400000.
+   */
+  readonly mode?: "values" | "formulas" | "display";
   /** Region to write. Defaults to the sheet's used range. */
   readonly range?: RangeRef | string;
 }
@@ -265,6 +272,21 @@ export function importRows(
  * `formulas` writes what was typed, which is what a round trip wants — and the
  * two are only the same on a sheet with no formulas in it.
  */
+function cellText(
+  workbook: Workbook,
+  address: string,
+  mode: "values" | "formulas" | "display",
+): string {
+  switch (mode) {
+    case "formulas":
+      return workbook.getInput(address);
+    case "display":
+      return workbook.getDisplay(address);
+    default:
+      return formatValue(workbook.getValue(address));
+  }
+}
+
 export function exportRows(
   workbook: Workbook,
   options: ExportOptions = {},
@@ -279,11 +301,7 @@ export function exportRows(
     const line: string[] = [];
     for (let col = range.start.col; col <= range.end.col; col += 1) {
       const address = addressOf({ row, col });
-      line.push(
-        mode === "formulas"
-          ? workbook.getInput(address)
-          : formatValue(workbook.getValue(address)),
-      );
+      line.push(cellText(workbook, address, mode));
     }
     rows.push(line);
   }

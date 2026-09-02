@@ -95,6 +95,23 @@ export function sampleFormulas(): Record<string, string> {
   return cells;
 }
 
+/**
+ * Formats the example ships with, by block.
+ *
+ * A project appraisal written in raw doubles is unreadable — the free cash
+ * flow column reads as `-2400000` and the internal rate of return as
+ * `0.1356486793`. These are the formats the sheet would carry if a person had
+ * built it, which is also what makes the format machinery visible on load.
+ */
+export const SAMPLE_FORMATS: Record<string, string> = {
+  "B3:B4": "0.0%",
+  "B7:G13": "#,##0;[Red](#,##0)",
+  "A7:A13": "0",
+  "B15": "$#,##0;[Red]($#,##0)",
+  "B16": "0.00%",
+  "B17:B18": "$#,##0;[Red]($#,##0)",
+};
+
 /** Column widths the example reads best at, by column index. */
 export const SAMPLE_WIDTHS: Record<number, number> = {
   0: 176,

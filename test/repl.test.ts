@@ -484,3 +484,86 @@ describe("blocks, clipboard and history", () => {
     );
   });
 });
+
+describe("number formats", () => {
+  it("applies a format to a cell", () => {
+    expect(one(".format A1 = #,##0.00", ["A1 = 1234.5"])).toContain(
+      "formatted A1",
+    );
+    expect(one("A1", ["A1 = 1234.5", ".format A1 = #,##0.00"])).toContain(
+      "1,234.50",
+    );
+  });
+
+  it("applies a format to a block", () => {
+    const out = one(".format A1:A3 = 0%", ["A1 = 0.5", "A2 = 0.25"]);
+    expect(out).toContain("formatted A1:A3");
+    expect(one("A2", ["A1 = 0.5", "A2 = 0.25", ".format A1:A3 = 0%"])).toContain(
+      "25%",
+    );
+  });
+
+  it("shows the code on a cell when asked without an assignment", () => {
+    expect(one(".format A1", ["A1 = 1", ".format A1 = 0.00"])).toContain("0.00");
+  });
+
+  it("says so when a cell has no format", () => {
+    expect(one(".format A1", ["A1 = 1"])).toContain("general format");
+  });
+
+  it("lists every formatted cell", () => {
+    const out = one(".formats", ["A1 = 1", "B2 = 2", ".format A1 = 0.00"]);
+    expect(out).toContain("A1");
+    expect(out).toContain("0.00");
+    expect(out).not.toContain("B2");
+  });
+
+  it("says so when nothing is formatted", () => {
+    expect(one(".formats", ["A1 = 1"])).toContain("no formats");
+  });
+
+  it("reports a malformed code with its position", () => {
+    const out = one(".format A1 = 0yyyy", ["A1 = 1"]);
+    expect(out).toContain("date and time");
+    expect(out).toContain("(at 1)");
+  });
+
+  it("clears a format back to General", () => {
+    const out = one(".format A1 = General", ["A1 = 1", ".format A1 = 0.00"]);
+    expect(out).toContain("cleared the format on A1");
+  });
+
+  it("refuses a target that is not a cell or block", () => {
+    expect(one(".format nonsense = 0.00")).toContain("not a cell or block");
+  });
+
+  it("names the format in the undo history", () => {
+    expect(one(".undo", ["A1 = 1", ".format A1 = 0.00"])).toContain(
+      "undid format A1",
+    );
+  });
+
+  it("shows the code alongside the value in a listing", () => {
+    const out = one(".list", ["A1 = 0.5", ".format A1 = 0%"]);
+    expect(out).toContain("50%");
+    expect(out).toContain("[0%]");
+  });
+});
+
+describe("exporting what the sheet shows", () => {
+  it("writes the underlying value by default", () => {
+    const out = one(".csv", ["A1 = 1234.5", ".format A1 = #,##0.00"]);
+    expect(out).toContain("1234.5");
+    expect(out).not.toContain("1,234.50");
+  });
+
+  it("writes the formatted text on request", () => {
+    const out = one(".csv display", ["A1 = 1234.5", ".format A1 = #,##0.00"]);
+    expect(out).toContain("1,234.50");
+  });
+
+  it("still writes formulas on request", () => {
+    const out = one(".csv formulas", ["A1 = 2", "B1 = =A1*3"]);
+    expect(out).toContain("=A1*3");
+  });
+});

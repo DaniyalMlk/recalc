@@ -27,6 +27,15 @@ export interface Change {
   readonly label: string;
   readonly cells: readonly CellChange[];
   /**
+   * Format codes before and after, for the cells whose format moved.
+   *
+   * Kept apart from the inputs because the two are independent: typing in a
+   * cell changes contents without touching its format, applying a format
+   * changes no contents at all, and a structural edit moves both. `""` means
+   * the cell carried no format.
+   */
+  readonly formats?: readonly CellChange[];
+  /**
    * The whole name table before and after, when the operation touched it.
    *
    * Names are few and the table is small, so there is nothing to gain from
@@ -61,7 +70,13 @@ export class EditJournal {
 
   /** Add an operation. Ignored when it changed nothing. */
   record(change: Change): void {
-    if (change.cells.length === 0 && change.names === undefined) return;
+    if (
+      change.cells.length === 0 &&
+      change.names === undefined &&
+      (change.formats === undefined || change.formats.length === 0)
+    ) {
+      return;
+    }
     this.past.push(change);
     if (this.past.length > this.limit) this.past.shift();
     this.future.length = 0;
@@ -112,7 +127,10 @@ export class EditJournal {
 }
 
 /**
- * Build the cell half of a change from two input maps.
+ * Build one half of a change from two address-to-text maps.
+ *
+ * Used for both the inputs and the format codes; the two are the same shape,
+ * and a missing key means "nothing there" in either case.
  *
  * The union of the two key sets is what matters, not either one alone: a cell
  * that only exists afterwards has to be recorded so undo can remove it, and one

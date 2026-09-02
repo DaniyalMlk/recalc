@@ -5,6 +5,7 @@ import { CYCLE_ERROR, err } from "./errors.js";
 import { evaluate } from "./evaluator.js";
 import type { EvalContext } from "./evaluator.js";
 import { DependencyGraph } from "./graph.js";
+import { FormatTable } from "./formats.js";
 import { EditJournal, diffInputs } from "./history.js";
 import type { Change } from "./history.js";
 import { SparseGrid } from "./grid.js";
@@ -27,6 +28,7 @@ import {
   parseA1,
   parseA1Range,
   parseCellKey,
+  rangeSize,
 } from "./reference.js";
 import type { CellRef, Coord, RangeRef } from "./reference.js";
 import { translateAst } from "./translate.js";
@@ -34,6 +36,8 @@ import { adjustAst, adjustCoord, validateEdit } from "./structure.js";
 import type { StructuralEdit } from "./structure.js";
 import { formatValue, parseNumericText } from "./value.js";
 import type { Value } from "./value.js";
+import { isGeneralFormat } from "../format/code.js";
+import type { FormattedValue } from "../format/render.js";
 
 /** What the user typed, plus everything derived from it. */
 export interface CellRecord {
@@ -61,6 +65,16 @@ function toRange(block: BlockAddress): RangeRef {
   return typeof block === "string"
     ? parseA1Range(block)
     : normalizeRange(block);
+}
+
+/**
+ * How a block reads in a menu.
+ *
+ * A one-cell block is written as the cell. `format A1:A1` is technically
+ * accurate and reads like a bug in an undo menu.
+ */
+function blockLabel(range: RangeRef): string {
+  return rangeSize(range) === 1 ? formatA1(range.start) : formatRange(range);
 }
 
 /** Render a coordinate as a plain, unanchored A1 address. */
@@ -104,6 +118,15 @@ export interface Clipboard {
   readonly height: number;
   /** Row-major, `height` rows of `width` entries. */
   readonly cells: readonly (readonly (string | null)[])[];
+  /**
+   * The format code on each copied cell, same shape as `cells`.
+   *
+   * Copying carries the format with the contents, so pasting a formatted
+   * block somewhere else reproduces what it looked like — and pasting a cell
+   * with no format clears whatever format the target had, the way replacing
+   * the contents replaces them.
+   */
+  readonly formats: readonly (readonly (string | null)[])[];
 }
 
 /** Render a dependency-graph cell id as a plain A1 address. */
@@ -175,6 +198,7 @@ function translateInputText(
  */
 export class Workbook {
   private readonly cells = new SparseGrid<CellRecord>();
+  private readonly formats = new FormatTable();
   private readonly graph = new DependencyGraph();
   private readonly nameTable = new NameTable();
 
@@ -274,6 +298,7 @@ export class Workbook {
 
     const namesBefore = this.nameTable.list();
     const before = this.captureInputs(scope);
+    const formatsBefore = this.captureFormats(scope);
 
     this.recording = true;
     try {
@@ -285,13 +310,17 @@ export class Workbook {
     const after = this.captureInputs(scope);
     const namesAfter = this.nameTable.list();
     const cells = diffInputs(before, after);
+    const formats = diffInputs(formatsBefore, this.captureFormats(scope));
     const names = sameNames(namesBefore, namesAfter)
       ? undefined
       : { before: namesBefore, after: namesAfter };
 
-    this.journal.record(
-      names === undefined ? { label, cells } : { label, cells, names },
-    );
+    this.journal.record({
+      label,
+      cells,
+      ...(formats.length > 0 ? { formats } : {}),
+      ...(names === undefined ? {} : { names }),
+    });
   }
 
   private captureInputs(
@@ -311,6 +340,24 @@ export class Workbook {
     return out;
   }
 
+  /** The same snapshot as {@link captureInputs}, for the format table. */
+  private captureFormats(
+    scope: readonly Coord[] | "sheet",
+  ): Map<string, string> {
+    const out = new Map<string, string>();
+    if (scope === "sheet") {
+      for (const [coord, code] of this.formats.entries()) {
+        out.set(addressOf(coord), code);
+      }
+      return out;
+    }
+    for (const coord of scope) {
+      const code = this.formats.get(coord);
+      if (code !== null) out.set(addressOf(coord), code);
+    }
+    return out;
+  }
+
   /**
    * Put the sheet into one side of a recorded change.
    *
@@ -323,6 +370,9 @@ export class Workbook {
     try {
       if (change.names !== undefined) {
         this.nameTable.restore(change.names[side]);
+      }
+      for (const format of change.formats ?? []) {
+        this.formats.set(parseA1(format.address), format[side]);
       }
       this.writeInputs(
         change.cells.map(
@@ -419,10 +469,12 @@ export class Workbook {
     if (height < 2) return;
 
     const updates: [Coord, string][] = [];
+    const formats: [Coord, string][] = [];
     // The source row is read before anything is written, so a block that
     // overlaps its own source still fills from the original.
     for (let col = range.start.col; col <= range.end.col; col++) {
       const source = this.cells.get({ col, row: range.start.row });
+      const format = this.formats.get({ col, row: range.start.row });
       for (let row = range.start.row + 1; row <= range.end.row; row++) {
         updates.push([
           { col, row },
@@ -430,9 +482,11 @@ export class Workbook {
             ? ""
             : this.translatedInput(source, 0, row - range.start.row),
         ]);
+        formats.push([{ col, row }, format ?? ""]);
       }
     }
     this.transact("fill down", updates.map(([coord]) => coord), () => {
+      for (const [coord, code] of formats) this.formats.set(coord, code);
       this.writeInputs(updates);
     });
   }
@@ -444,8 +498,10 @@ export class Workbook {
     if (width < 2) return;
 
     const updates: [Coord, string][] = [];
+    const formats: [Coord, string][] = [];
     for (let row = range.start.row; row <= range.end.row; row++) {
       const source = this.cells.get({ col: range.start.col, row });
+      const format = this.formats.get({ col: range.start.col, row });
       for (let col = range.start.col + 1; col <= range.end.col; col++) {
         updates.push([
           { col, row },
@@ -453,9 +509,11 @@ export class Workbook {
             ? ""
             : this.translatedInput(source, col - range.start.col, 0),
         ]);
+        formats.push([{ col, row }, format ?? ""]);
       }
     }
     this.transact("fill across", updates.map(([coord]) => coord), () => {
+      for (const [coord, code] of formats) this.formats.set(coord, code);
       this.writeInputs(updates);
     });
   }
@@ -464,18 +522,23 @@ export class Workbook {
   copy(block: BlockAddress): Clipboard {
     const range = toRange(block);
     const cells: (string | null)[][] = [];
+    const formats: (string | null)[][] = [];
     for (let row = range.start.row; row <= range.end.row; row++) {
       const line: (string | null)[] = [];
+      const formatLine: (string | null)[] = [];
       for (let col = range.start.col; col <= range.end.col; col++) {
         line.push(this.cells.get({ col, row })?.input ?? null);
+        formatLine.push(this.formats.get({ col, row }));
       }
       cells.push(line);
+      formats.push(formatLine);
     }
     return {
       origin: { col: range.start.col, row: range.start.row },
       width: range.end.col - range.start.col + 1,
       height: range.end.row - range.start.row + 1,
       cells,
+      formats,
     };
   }
 
@@ -492,8 +555,10 @@ export class Workbook {
     const deltaRow = at.row - clipboard.origin.row;
 
     const updates: [Coord, string][] = [];
+    const formats: [Coord, string][] = [];
     for (let row = 0; row < clipboard.height; row++) {
       const line = clipboard.cells[row] ?? [];
+      const formatLine = clipboard.formats[row] ?? [];
       for (let col = 0; col < clipboard.width; col++) {
         const coord = { col: at.col + col, row: at.row + row };
         if (coord.col >= MAX_COLUMNS || coord.row >= MAX_ROWS) continue;
@@ -502,9 +567,11 @@ export class Workbook {
           coord,
           input === null ? "" : translateInputText(input, deltaCol, deltaRow),
         ]);
+        formats.push([coord, formatLine[col] ?? ""]);
       }
     }
     this.transact("paste", updates.map(([coord]) => coord), () => {
+      for (const [coord, code] of formats) this.formats.set(coord, code);
       this.writeInputs(updates);
     });
   }
@@ -614,11 +681,22 @@ export class Workbook {
       ]);
     }
 
+    // Formats move on the same rule as the cells, and independently of them:
+    // a column formatted as money keeps that format when a row is inserted
+    // through it, whether or not the cells in it hold anything yet.
+    const movedFormats: [Coord, string][] = [];
+    for (const [coord, code] of this.formats.entries()) {
+      const target = adjustCoord(coord, edit);
+      if (target !== null) movedFormats.push([target, code]);
+    }
+
     this.cells.clear();
+    this.formats.clear();
     this.graph.clear();
     this.nameUsers.clear();
     this.nameTable.adjust(edit);
 
+    for (const [coord, code] of movedFormats) this.formats.set(coord, code);
     for (const [coord, record] of moved) this.cells.set(coord, record);
     for (const [coord, record] of moved) this.writePrecedents(coord, record.ast);
 
@@ -664,13 +742,72 @@ export class Workbook {
     return this.nameTable.list();
   }
 
+  /**
+   * Attach a number format to every cell in a block.
+   *
+   * The code is compiled here, so a malformed one throws
+   * {@link FormatCodeError} and the sheet is left untouched — the same
+   * discipline `setCell` applies to a malformed formula. `General` and the
+   * empty string remove the format.
+   *
+   * A format is attached to the *cell*, not to its contents, so it lands on
+   * empty cells in the block too and stays there when they are later filled.
+   */
+  setFormat(block: BlockAddress, code: string): void {
+    const range = toRange(block);
+    const coords = [...iterateRange(range)];
+    const label = isGeneralFormat(code) || code === ""
+      ? `clear format on ${blockLabel(range)}`
+      : `format ${blockLabel(range)}`;
+    this.transact(label, coords, () => {
+      for (const coord of coords) this.formats.set(coord, code);
+    });
+  }
+
+  /** Return a block to the general format, leaving its contents alone. */
+  clearFormat(block: BlockAddress): void {
+    this.setFormat(block, "");
+  }
+
+  /** The format code on a cell, or `null` when it uses the general format. */
+  formatOf(address: Address): string | null {
+    return this.formats.get(toCoord(address));
+  }
+
+  /** How many cells carry a format. */
+  get formatCount(): number {
+    return this.formats.size;
+  }
+
+  /** Every cell carrying a format, in address order. */
+  formatEntries(): { address: string; code: string }[] {
+    const out = [...this.formats.entries()].map(([coord, code]) => ({
+      address: addressOf(coord),
+      code,
+      coord,
+    }));
+    out.sort((a, b) => a.coord.row - b.coord.row || a.coord.col - b.coord.col);
+    return out.map(({ address, code }) => ({ address, code }));
+  }
+
   getValue(address: Address): Value {
     return this.cells.get(toCoord(address))?.value ?? null;
   }
 
-  /** The value as it would be displayed in the cell. */
+  /** The value as it would be displayed in the cell, format applied. */
   getDisplay(address: Address): string {
-    return formatValue(this.getValue(address));
+    return this.getFormatted(address).text;
+  }
+
+  /**
+   * The displayed text together with any colour the format asked for.
+   *
+   * The colour is reported rather than applied: this layer has no idea whether
+   * it is drawing to a terminal, a DOM node or nothing at all.
+   */
+  getFormatted(address: Address): FormattedValue {
+    const coord = toCoord(address);
+    return this.formats.render(coord, this.cells.get(coord)?.value ?? null);
   }
 
   /** Exactly what was typed into the cell. */

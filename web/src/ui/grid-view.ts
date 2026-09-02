@@ -17,6 +17,11 @@ export interface CellPaint {
   readonly text: string;
   readonly kind: "number" | "text" | "boolean" | "error" | "blank";
   readonly isFormula: boolean;
+  /**
+   * A colour the cell's number format asked for, as a CSS custom-property
+   * name, or `null` to leave the cell in the sheet's own ink.
+   */
+  readonly colour: string | null;
 }
 
 export interface GridElements {
@@ -219,7 +224,7 @@ export class GridView {
         const slot =
           this.highlight === null ? null : slotForCell(this.highlight, row, col);
 
-        const signature = `${row}:${col}|${paint.text}|${paint.kind}|${paint.isFormula ? 1 : 0}|${slot ?? ""}`;
+        const signature = `${row}:${col}|${paint.text}|${paint.kind}|${paint.isFormula ? 1 : 0}|${slot ?? ""}|${paint.colour ?? ""}`;
         if (!force && node.dataset["sig"] === signature) continue;
         node.dataset["sig"] = signature;
         node.dataset["row"] = String(row);
@@ -232,6 +237,10 @@ export class GridView {
         node.className = `cell cell--${paint.kind}${
           paint.isFormula ? " cell--formula" : ""
         }`;
+        // Cells are recycled, so a colour has to be cleared as explicitly as
+        // it is set — otherwise a scrolled-away red negative tints whatever
+        // cell inherits its node.
+        node.style.color = paint.colour === null ? "" : `var(${paint.colour})`;
         node.hidden = false;
       }
     }

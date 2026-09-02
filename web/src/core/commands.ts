@@ -10,6 +10,7 @@
 
 import { columnToLabel } from "../../../src/engine/reference.js";
 import type { CellRect } from "./selection.js";
+import type { FormatPresetId } from "./formats.js";
 
 export type CommandId =
   | "undo"
@@ -23,7 +24,8 @@ export type CommandId =
   | "insert-rows"
   | "delete-rows"
   | "insert-columns"
-  | "delete-columns";
+  | "delete-columns"
+  | FormatPresetId;
 
 export interface Command {
   readonly id: CommandId;
@@ -31,6 +33,13 @@ export interface Command {
   readonly enabled: boolean;
   /** Keyboard shortcut, already spelled for this platform. */
   readonly hint?: string;
+  /**
+   * Whether this item is the one currently in effect.
+   *
+   * Only meaningful in a group where the items are alternatives — the format
+   * presets — and it is what turns a list of commands into a set of choices.
+   */
+  readonly checked?: boolean;
 }
 
 export interface CommandContext {
