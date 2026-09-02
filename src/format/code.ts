@@ -172,7 +172,10 @@ export function parseFormatCode(source: string): FormatCode {
       continue;
     }
     if (char === "\\") {
-      index += 2;
+      // Clamped, so a code ending in a lone backslash still closes its
+      // section and reaches the parser that rejects it, rather than stepping
+      // past the terminator and losing the section altogether.
+      index = Math.min(index + 2, source.length);
       continue;
     }
     index += 1;
