@@ -345,7 +345,7 @@ describe("exporting through the number formats", () => {
   it("leaves a formatted column formatted when data is imported into it", () => {
     const book = new Workbook();
     book.setFormat("A1:A3", "#,##0");
-    importCsv(book, "1000\n2000\n3000", { at: "A1" });
+    importCsv(book, "1000\n2000\n3000", { origin: "A1" });
     expect(book.getDisplay("A2")).toBe("2,000");
     expect(book.formatOf("A3")).toBe("#,##0");
   });

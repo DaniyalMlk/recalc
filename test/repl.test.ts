@@ -549,3 +549,21 @@ describe("number formats", () => {
     expect(out).toContain("[0%]");
   });
 });
+
+describe("exporting what the sheet shows", () => {
+  it("writes the underlying value by default", () => {
+    const out = one(".csv", ["A1 = 1234.5", ".format A1 = #,##0.00"]);
+    expect(out).toContain("1234.5");
+    expect(out).not.toContain("1,234.50");
+  });
+
+  it("writes the formatted text on request", () => {
+    const out = one(".csv display", ["A1 = 1234.5", ".format A1 = #,##0.00"]);
+    expect(out).toContain("1,234.50");
+  });
+
+  it("still writes formulas on request", () => {
+    const out = one(".csv formulas", ["A1 = 2", "B1 = =A1*3"]);
+    expect(out).toContain("=A1*3");
+  });
+});

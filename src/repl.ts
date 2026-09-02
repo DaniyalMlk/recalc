@@ -82,9 +82,9 @@ export const HELP = `
     .deletecol C [n]        remove n columns from column C right
 
   ${paint(BOLD, "CSV")}
-    .csv [formulas]         print the sheet as CSV
+    .csv [formulas|display] print the sheet as CSV
     .import data.csv [A1]   read a CSV file into the sheet
-    .export out.csv [formulas]
+    .export out.csv [formulas|display]
                             write the sheet to a CSV file
 `;
 
@@ -299,6 +299,14 @@ function blockLabel(range: { start: CellRef; end: CellRef }): string {
   return range.start.col === range.end.col && range.start.row === range.end.row
     ? formatA1(range.start)
     : formatRange(range);
+}
+
+/** Which of the three export modes a command tail asks for. */
+function exportMode(tail: string): "values" | "formulas" | "display" {
+  const word = tail.trim().toLowerCase();
+  if (word === "formulas") return "formulas";
+  if (word === "display") return "display";
+  return "values";
 }
 
 function readBlock(text: string) {
@@ -549,8 +557,10 @@ function handle(
   }
 
   if (line === ".csv" || line.startsWith(".csv ")) {
-    const mode = line.slice(4).trim() === "formulas" ? "formulas" : "values";
-    const text = exportCsv(book, { mode, newline: "\n" });
+    const text = exportCsv(book, {
+      mode: exportMode(line.slice(4)),
+      newline: "\n",
+    });
     return text === "" ? paint(DIM, "  (empty sheet)") : text;
   }
 
@@ -572,9 +582,7 @@ function handle(
     if (path === undefined) {
       return paint(RED, "  usage: .export out.csv [formulas]");
     }
-    const text = exportCsv(book, {
-      mode: mode === "formulas" ? "formulas" : "values",
-    });
+    const text = exportCsv(book, { mode: exportMode(mode ?? "") });
     files.write(path, text);
     return `  ${book.cellCount} cell(s) to ${path}`;
   }
