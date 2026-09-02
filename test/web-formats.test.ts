@@ -111,6 +111,13 @@ describe("previews", () => {
       );
     }
   });
+
+  it("give each preset a stand-in that demonstrates it", () => {
+    // A single shared stand-in would show percent as `123450.0%`.
+    expect(previewFormat(formatPreset("format-percent"), null)).toBe("12.5%");
+    expect(previewFormat(formatPreset("format-thousands"), null)).toBe("1.5k");
+    expect(previewFormat(formatPreset("format-millions"), null)).toBe("2.4M");
+  });
 });
 
 describe("the format menu", () => {

@@ -30,31 +30,47 @@ export interface FormatPreset {
   readonly label: string;
   /** The code applied. Empty means back to the general format. */
   readonly code: string;
+  /**
+   * The number this preset is previewed on when the cell has none.
+   *
+   * One shared stand-in cannot serve all eight: 1234.5 shows grouping well
+   * and reads as `123450.0%` under the percent code, which teaches nothing
+   * about what percent is for. Each preset carries a figure of the size it
+   * exists to handle instead.
+   */
+  readonly standIn: number;
 }
 
 export const FORMAT_PRESETS: readonly FormatPreset[] = [
-  { id: "format-general", label: "General", code: "" },
-  { id: "format-number", label: "Number", code: "#,##0.00" },
-  { id: "format-integer", label: "Whole number", code: "#,##0" },
+  { id: "format-general", label: "General", code: "", standIn: 1234.5 },
+  { id: "format-number", label: "Number", code: "#,##0.00", standIn: 1234.5 },
+  { id: "format-integer", label: "Whole number", code: "#,##0", standIn: 1234.5 },
   {
     id: "format-currency",
     label: "Currency",
     code: "$#,##0.00;[Red]($#,##0.00)",
+    standIn: 1234.5,
   },
-  { id: "format-thousands", label: "Thousands", code: '#,##0.0,"k"' },
-  { id: "format-millions", label: "Millions", code: '#,##0.0,,"M"' },
-  { id: "format-percent", label: "Percent", code: "0.0%" },
-  { id: "format-scientific", label: "Scientific", code: "0.00E+00" },
+  {
+    id: "format-thousands",
+    label: "Thousands",
+    code: '#,##0.0,"k"',
+    standIn: 1500,
+  },
+  {
+    id: "format-millions",
+    label: "Millions",
+    code: '#,##0.0,,"M"',
+    standIn: 2400000,
+  },
+  { id: "format-percent", label: "Percent", code: "0.0%", standIn: 0.125 },
+  {
+    id: "format-scientific",
+    label: "Scientific",
+    code: "0.00E+00",
+    standIn: 1234.5,
+  },
 ];
-
-/**
- * The number a preview falls back to when the cell has no number in it.
- *
- * Large enough to show grouping and small enough to stay readable as a
- * percentage, which is the pair of demands the eight presets make of one
- * value.
- */
-const STAND_IN = 1234.5;
 
 const BY_ID = new Map(FORMAT_PRESETS.map((preset) => [preset.id, preset]));
 
@@ -110,7 +126,7 @@ export function describeFormat(current: SelectionFormat): string {
  * number to preview, so a stand-in stands in.
  */
 export function previewFormat(preset: FormatPreset, value: Value): string {
-  const subject = kindOf(value) === "number" ? value : STAND_IN;
+  const subject = kindOf(value) === "number" ? value : preset.standIn;
   if (preset.code === "") return formatValue(subject);
   return formatWith(preset.code, subject).text;
 }
