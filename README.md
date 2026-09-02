@@ -15,14 +15,13 @@ formula depends on, and recalculates only what an edit actually invalidated.
 
 ## Status
 
-Phases 1 to 11 in [ROADMAP.md](ROADMAP.md) are complete: the formula grammar,
-the reference model, the dependency graph, the evaluator, a function library of
-98 functions including a financial pack, CSV interchange, named ranges, a
+Every phase in [ROADMAP.md](ROADMAP.md) is complete: the formula grammar, the
+reference model, the dependency graph, the evaluator, a function library of 98
+functions including a financial pack, CSV interchange, named ranges, a
 benchmark harness, structural editing that rewrites every formula in the sheet
-when rows and columns move, block editing with fill, clipboard and undo, a web
-interface where all of it is reachable from a virtualised grid, and a number
-format compiler. Phase 12 attaches formats to cells; until it lands they are
-reachable through `TEXT` and the library.
+when rows and columns move, block editing with fill, clipboard and undo, number
+formats that follow their cells through every one of those operations, and a
+web interface where all of it is reachable from a virtualised grid.
 
 ## Using it as a library
 
@@ -99,8 +98,28 @@ const code = parseFormatCode("$#,##0.00");
 applyFormat(code, -1234.5).text;              // "-$1,234.50"
 ```
 
+A format is attached to a cell rather than to its contents, which is what lets
+a column stay formatted as money while its figures come and go:
+
+```ts
+const book = new Workbook();
+book.setCells({ B15: 237560.620691, B16: 0.1356486793 });
+book.setFormat("B15", "$#,##0;[Red]($#,##0)");
+book.setFormat("B16", "0.0%");
+
+book.getDisplay("B15");     // "$237,561"
+book.getValue("B15");       // 237560.620691 - untouched
+book.getFormatted("B16");   // { text: "13.6%", colour: null }
+
+book.clearCell("B15");      // contents go
+book.formatOf("B15");       // "$#,##0;[Red]($#,##0)" - the format stays
+```
+
+Formats move with their cells through an insert, a delete, a fill or a paste,
+and undo reverses a format change like any other edit.
+
 The same compiler backs the `TEXT` worksheet function, so what a formula
-produces and what a cell will display cannot drift apart:
+produces and what a cell displays cannot drift apart:
 
 ```
 =TEXT(B15, "$#,##0")     →  "$237,561"
@@ -136,6 +155,13 @@ row or column header selects the line; right-clicking one offers to insert or
 delete it, with the menu naming what it would do to the current selection rather
 than in the abstract.
 
+The **Format** menu applies a number format to the selection. Each choice is
+previewed against the number in the selected cell rather than against a stock
+figure, because "Millions" means nothing beside a capital outlay until it reads
+`-2.4M`; the format already in effect is ticked, and a selection whose cells
+disagree ticks nothing. A format's `[Red]` section is honoured on the grid, so
+a negative in an accounting format arrives in parentheses and in red.
+
 ## Using it from the shell
 
 ```bash
@@ -157,6 +183,11 @@ recalc> .plan B1
 recalc> B1 = 0.25
 recalc> B10
   B10  reject              =IF(B6>0,"accept","reject")
+
+recalc> .format B6 = $#,##0.00
+  formatted B6 as $#,##0.00
+recalc> B6
+  B6  -$33,936.00          =B3+NPV(B1,C3:F3)   [$#,##0.00]
 ```
 
 `.help` lists the commands: `.list`, `.show A1:C9`, `.prec`, `.deps`, `.plan`,
@@ -165,8 +196,9 @@ recalc> B10
 `.filldown B1:B9`, `.fillright B2:F2`, `.copy A1:C3`, `.paste D5`, `.undo`,
 `.redo`; for rows and columns
 `.insertrow 3 [n]`, `.deleterow 3 [n]`, `.insertcol C [n]`, `.deletecol C [n]`;
-and for CSV `.csv [formulas]`, `.import data.csv [A1]`,
-`.export out.csv [formulas]`.
+for number formats `.format B2:B13 = #,##0.00`, `.format B2`, `.formats`; and
+for CSV `.csv [formulas|display]`, `.import data.csv [A1]`,
+`.export out.csv [formulas|display]`.
 
 ## Install and run
 
@@ -216,6 +248,23 @@ value through the whole engine and is resolved at the point of comparison.
 though the stored double is 2.67499999…. `-2^2` is 4, because negation binds
 tighter than exponentiation. Each is reproduced deliberately and pinned by a
 test.
+
+**Display rounding happens on the decimal, not on the double.** `toFixed` is
+the obvious tool and gives the wrong answer often enough to matter:
+`(1.005).toFixed(2)` is `"1.00"`, because 1.005 is really 1.00499999999999989
+in binary. No spreadsheet shows that. A value is instead decomposed into
+exactly 15 significant decimal digits — the precision at which a double
+round-trips through a decimal string unambiguously — and rounded there, half
+away from zero. The same decomposition supplies the base-ten exponent for
+scientific formats, because `Math.floor(Math.log10(1000))` can land on 2 and
+print a thousand as `1.00E+02`.
+
+**A format belongs to the cell, not to its contents.** They are stored in a
+separate sparse table rather than inside the cell record, and the difference
+shows up twice. Clearing a cell in a spreadsheet leaves the column still
+reading as money, which a field on the record could not survive. And a format
+is usually applied to a block where most cells are empty, which a table keyed
+by coordinate handles for free.
 
 **Rate solving does not give up.** `IRR`, `XIRR` and `RATE` have no closed form.
 Newton's method is tried first and diverges on cash flows with a late reversal,
@@ -362,11 +411,13 @@ this workload, which is the price of the extra indirection at definition time.
   position is `#VALUE!` rather than a silent pick from the calling row.
 - Omitted arguments (`IF(A1,,2)`) are a parse error.
 - Only one sheet; there are no cross-sheet references.
-- Number formats exist as a library and as `TEXT`, but are not yet attached to
-  cells, so the grid still shows the general format and a rate reads as
-  `0.1356486793` rather than `13.6%`.
 - Date and fraction format codes are rejected rather than supported: the value
   model has no date serial type, so `yyyy-mm-dd` would have nothing to format.
+- A format belongs to a cell, not to a row, a column or the sheet, so
+  formatting a whole column means selecting it and applying the format to the
+  cells in it.
+- CSV carries no formats: an export in `display` mode writes what the sheet
+  shows, but that text does not read back in as the same numbers.
 - Names can only be defined from the library or the shell, not from the grid.
 - Reference highlighting outlines only references written out in the formula.
   A name is underlined in the formula bar and resolved in the inspector, but
