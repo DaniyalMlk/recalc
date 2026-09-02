@@ -779,6 +779,17 @@ export class Workbook {
     return this.formats.size;
   }
 
+  /** Every cell carrying a format, in address order. */
+  formatEntries(): { address: string; code: string }[] {
+    const out = [...this.formats.entries()].map(([coord, code]) => ({
+      address: addressOf(coord),
+      code,
+      coord,
+    }));
+    out.sort((a, b) => a.coord.row - b.coord.row || a.coord.col - b.coord.col);
+    return out.map(({ address, code }) => ({ address, code }));
+  }
+
   getValue(address: Address): Value {
     return this.cells.get(toCoord(address))?.value ?? null;
   }
