@@ -28,6 +28,7 @@ import {
   parseA1,
   parseA1Range,
   parseCellKey,
+  rangeSize,
 } from "./reference.js";
 import type { CellRef, Coord, RangeRef } from "./reference.js";
 import { translateAst } from "./translate.js";
@@ -64,6 +65,16 @@ function toRange(block: BlockAddress): RangeRef {
   return typeof block === "string"
     ? parseA1Range(block)
     : normalizeRange(block);
+}
+
+/**
+ * How a block reads in a menu.
+ *
+ * A one-cell block is written as the cell. `format A1:A1` is technically
+ * accurate and reads like a bug in an undo menu.
+ */
+function blockLabel(range: RangeRef): string {
+  return rangeSize(range) === 1 ? formatA1(range.start) : formatRange(range);
 }
 
 /** Render a coordinate as a plain, unanchored A1 address. */
@@ -746,8 +757,8 @@ export class Workbook {
     const range = toRange(block);
     const coords = [...iterateRange(range)];
     const label = isGeneralFormat(code) || code === ""
-      ? `clear format on ${formatRange(range)}`
-      : `format ${formatRange(range)}`;
+      ? `clear format on ${blockLabel(range)}`
+      : `format ${blockLabel(range)}`;
     this.transact(label, coords, () => {
       for (const coord of coords) this.formats.set(coord, code);
     });
