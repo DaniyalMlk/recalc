@@ -22,7 +22,8 @@ benchmark harness, structural editing that rewrites every formula in the sheet
 when rows and columns move, block editing with fill, clipboard and undo, number
 formats that follow their cells through every one of those operations, what-if
 analysis with goal seek, sensitivity tables and named scenarios, and a web
-interface where all of it is reachable from a virtualised grid.
+interface where all of it is reachable from a virtualised grid — the analysis
+included.
 
 ## Using it as a library
 
@@ -301,6 +302,37 @@ figure, because "Millions" means nothing beside a capital outlay until it reads
 `-2.4M`; the format already in effect is ticked, and a selection whose cells
 disagree ticks nothing. A format's `[Red]` section is honoured on the grid, so
 a negative in an accounting format arrives in parentheses and in red.
+
+### What-if in the grid
+
+The sidebar holds two panels and shows one. The inspector follows the
+selection; the what-if forms do not, which is why they are tabs rather than
+something stacked — they are two states of the same space. Switching is a
+`hidden` toggle with no transition, because it is a control someone presses
+dozens of times an hour and an animation on it would be slower on the twentieth
+press than on the first.
+
+Three modes sit behind it. **Goal seek** takes a result, a goal and an input,
+prefilled from the selection, and solves without applying unless the second
+button is pressed. **Sensitivity** builds a one-way or crossed table in the
+panel, or writes it into the sheet at the selection. **Scenarios** captures the
+selected cells under a name, lists what is defined, applies one, and summarises
+them all side by side.
+
+Two details the panel gets right and most would not:
+
+**A refusal about the graph is not an error.** "This result does not depend on
+that input" is a true and useful answer, so it is shown on the panel's ordinary
+surface with a rule down the side. Dressing it in the same red as a mistyped
+address would teach people to ignore both.
+
+**Prefill only touches empty fields.** Someone who typed `B12` and then clicked
+a cell to read a value off the grid has not asked for their form to be
+rewritten, and a panel that helpfully undid their typing would be worse than
+one that did nothing at all.
+
+Structural edits made from the grid move the scenarios with the sheet, the same
+way the shell does.
 
 ## Using it from the shell
 

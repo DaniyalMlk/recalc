@@ -117,3 +117,13 @@ tree green and the public API usable.
 - [x] Scenarios follow rows and columns through a structural edit
 - [x] A summary across every scenario, marking the results that actually move
 - [x] `.scenario`, `.scenarios`, `.apply`, `.unscenario` and `.summary` in the shell
+
+## Phase 15 — What-if in the grid
+
+- [x] A second sidebar panel, switched by tabs, keeping its state across selection changes
+- [x] Goal seek from the grid, prefilled from the selection, solving without applying by default
+- [x] A refusal about the graph shown as an answer rather than as an error
+- [x] Sensitivity tables rendered in the panel, or written into the sheet
+- [x] Scenarios captured from the selection, applied, and summarised side by side
+- [x] Scenarios moved with the sheet by structural edits made from the grid
+- [x] Panel view logic separated from the DOM and tested that way
