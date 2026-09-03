@@ -179,11 +179,24 @@ export function twoWayTable(
 }
 
 /**
+ * Drop the float noise below twelve significant figures.
+ *
+ * An axis value becomes a column header, and `0.22999999999999998` in a header
+ * is not a precise number — it is a bug, as far as anyone reading it is
+ * concerned. No assumption anyone types carries twelve significant figures, so
+ * nothing real is lost, while `0.18 + 0.05` finally comes out as `0.23`.
+ */
+function clean(value: number): number {
+  return Number.isFinite(value) ? Number(value.toPrecision(12)) : value;
+}
+
+/**
  * A list of `count` values from `from` to `to`, inclusive.
  *
  * The endpoints are produced exactly rather than accumulated, so a series from
  * 0.05 to 0.15 ends at 0.15 and not at 0.14999999999999999 — which would be
- * arithmetically defensible and would look like a bug in a table header.
+ * arithmetically defensible and would look like a bug in a table header. The
+ * interior points get the same treatment through {@link clean}.
  */
 export function series(from: number, to: number, count: number): number[] {
   if (!Number.isInteger(count) || count < 1) {
@@ -192,7 +205,9 @@ export function series(from: number, to: number, count: number): number[] {
   if (count === 1) return [from];
   const out: number[] = [];
   for (let i = 0; i < count; i++) {
-    out.push(i === count - 1 ? to : from + ((to - from) * i) / (count - 1));
+    out.push(
+      i === count - 1 ? to : clean(from + ((to - from) * i) / (count - 1)),
+    );
   }
   return out;
 }
@@ -210,7 +225,7 @@ export function around(centre: number, step: number, count: number): number[] {
   }
   const half = (count - 1) / 2;
   const out: number[] = [];
-  for (let i = 0; i < count; i++) out.push(centre + (i - half) * step);
+  for (let i = 0; i < count; i++) out.push(clean(centre + (i - half) * step));
   return out;
 }
 
