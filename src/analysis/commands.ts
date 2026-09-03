@@ -116,6 +116,12 @@ export function goalSeekCommand(
     return ink.bad(`  ${detail}`) + closest;
   }
 
+  // Inside the tolerance is arrival, by the caller's own definition, so the
+  // line says the goal rather than giving eight significant figures to a
+  // residual that means nothing at this scale.
+  const reached =
+    Math.abs(result.achieved - to) <= result.tolerance ? to : result.achieved;
+
   const applied = commit
     ? `  ${changing} set to ${short(result.value)}`
     : `  ${changing} = ${short(result.value)}` +
@@ -124,7 +130,7 @@ export function goalSeekCommand(
   return (
     `${applied}\n` +
     ink.dim(
-      `  ${target} reaches ${short(result.achieved)} ` +
+      `  ${target} reaches ${short(reached)} ` +
         `from ${short(result.startedFrom)} ` +
         `in ${result.evaluations} recalculation(s)`,
     )

@@ -59,6 +59,15 @@ export interface GoalSeekResult {
   readonly startedFrom: number;
   /** How many times the sheet was recalculated. */
   readonly evaluations: number;
+  /**
+   * The standard the search was held to.
+   *
+   * Reported because a caller cannot otherwise tell an arrival from a near
+   * miss: an achieved value of -0.0000042 against a goal of 0 is exact for a
+   * target measured in hundreds of thousands and badly wrong for one measured
+   * in tenths, and only the tolerance says which.
+   */
+  readonly tolerance: number;
   readonly problem?: GoalSeekProblem;
   /** A sentence explaining a failure, ready to show. */
   readonly message?: string;
@@ -139,12 +148,14 @@ export function goalSeek(
     value = startedFrom,
     achieved = Number.NaN,
     evaluations = 0,
+    tolerance = 0,
   ): GoalSeekResult => ({
     converged: false,
     value,
     achieved,
     startedFrom,
     evaluations,
+    tolerance,
     problem,
     message: MESSAGES[problem](changingLabel, targetLabel),
   });
@@ -206,12 +217,20 @@ export function goalSeek(
       achieved: tidied?.fx ?? achieved,
       startedFrom: start,
       evaluations: outcome.evaluations + (tidied?.evaluations ?? 0),
+      tolerance,
     };
   }
 
   const problem: GoalSeekProblem =
     outcome.failure === "not-numeric" ? "target-not-numeric" : "no-convergence";
-  return fail(problem, start, outcome.x, achieved, outcome.evaluations);
+  return fail(
+    problem,
+    start,
+    outcome.x,
+    achieved,
+    outcome.evaluations,
+    tolerance,
+  );
 }
 
 /**
