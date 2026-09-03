@@ -34,3 +34,13 @@ export type {
   TwoWayRequest,
   TwoWayTable,
 } from "./table.js";
+
+export { ScenarioError, ScenarioSet } from "./scenarios.js";
+export type {
+  ApplyResult,
+  Assumption,
+  Scenario,
+  ScenarioConflict,
+  Summary,
+  SummaryColumn,
+} from "./scenarios.js";

@@ -21,8 +21,8 @@ functions including a financial pack, CSV interchange, named ranges, a
 benchmark harness, structural editing that rewrites every formula in the sheet
 when rows and columns move, block editing with fill, clipboard and undo, number
 formats that follow their cells through every one of those operations, what-if
-analysis with goal seek and sensitivity tables, and a web interface where all of
-it is reachable from a virtualised grid.
+analysis with goal seek, sensitivity tables and named scenarios, and a web
+interface where all of it is reachable from a virtualised grid.
 
 ## Using it as a library
 
@@ -213,6 +213,65 @@ A written table lands as literals rather than formulas: it is a record of what
 the model produced under those inputs, and re-deriving it later from a sheet
 that has moved on would make it silently wrong.
 
+## Scenarios
+
+A sensitivity table moves one input, or two. A real case moves a dozen at once
+— the downside is not "price 10% lower", it is lower price *and* slower ramp
+*and* higher cost of capital, together, because the things that go wrong go
+wrong in company.
+
+```
+recalc> .scenario Base = B1:B3
+  captured Base from 3 cell(s)
+recalc> .scenario Downside = B1=25, B2=700, B3=20
+  Downside: 3 assumption(s)
+recalc> .scenario Upside = B1=34, B2=1400, B3=17
+  Upside: 3 assumption(s)
+
+recalc> .summary B4,B6:B8
+        current   Base  Downside  Upside
+  B4 =     8000   8000      8000    8000
+  B6      30000  30000     17500   47600
+  B7       4000   4000     -4500   15800
+  B8         go     go        no      go
+  rows marked = are the same under every scenario
+```
+
+Every column of that summary is a trial, so the sheet is not touched and the
+columns cannot influence one another — which matters more than it sounds,
+because a summary computed by applying each scenario in turn would report every
+column against the leftovers of the one before it.
+
+A scenario stores *inputs*, so `B4==B2*10` is an assumption like any other:
+"fixed cost, but tied to volume" is a case worth comparing, and a scenario that
+could only hold numbers could not express it.
+
+Three decisions worth naming:
+
+**Scenarios live beside the sheet, not in it.** Applying one is an ordinary
+edit and belongs in the undo journal; *defining* one is not an edit at all, and
+journalling it would mean undo silently forgetting scenarios.
+
+**Capture comes first.** Without a captured base case there is no way back
+after applying anything, and a feature you cannot reverse is a feature nobody
+tries.
+
+**A conflict is reported before the write, not after.** A scenario captured
+while a cell held a number, applied after that cell has become a formula,
+destroys the formula and looks like nothing happened:
+
+```
+recalc> .apply Flat
+  applied Flat to 1 cell(s)
+  overwrote 1 formula(s): B7
+```
+
+Because scenarios are not part of the sheet, a structural edit cannot move them
+on its own — left alone, a scenario captured against `B7` would quietly start
+setting whatever landed at `B7` afterwards. `ScenarioSet.adjust` moves them by
+the same rule the formulas and names move by, and the shell calls it on every
+structural edit.
+
 ## Using it from the browser
 
 ```bash
@@ -279,7 +338,9 @@ recalc> B6
 `.insertrow 3 [n]`, `.deleterow 3 [n]`, `.insertcol C [n]`, `.deletecol C [n]`;
 for number formats `.format B2:B13 = #,##0.00`, `.format B2`, `.formats`; for
 what-if `.goalseek B6 = 0 by B1 [apply]` and
-`.table B6 by B1 = 20..40/5 [x B2 = 500..2000/4] [into D1]`; and for CSV
+`.table B6 by B1 = 20..40/5 [x B2 = 500..2000/4] [into D1]`; for scenarios
+`.scenario Base = B1:B3`, `.scenario Down = B1=25`, `.scenarios`,
+`.apply Down`, `.unscenario Down`, `.summary B6:B8`; and for CSV
 `.csv [formulas|display]`, `.import data.csv [A1]`,
 `.export out.csv [formulas|display]`.
 
@@ -512,6 +573,8 @@ than a wait.
   position is `#VALUE!` rather than a silent pick from the calling row.
 - Omitted arguments (`IF(A1,,2)`) are a parse error.
 - Only one sheet; there are no cross-sheet references.
+- Scenarios are not serialised: they live for the length of a session, and CSV
+  has nowhere to put them.
 - Date and fraction format codes are rejected rather than supported: the value
   model has no date serial type, so `yyyy-mm-dd` would have nothing to format.
 - A format belongs to a cell, not to a row, a column or the sheet, so

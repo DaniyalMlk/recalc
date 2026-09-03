@@ -17,6 +17,13 @@ import { registeredFunctionNames, lookupFunction } from "./functions/index.js";
 import { NameError, parseTarget } from "./engine/names.js";
 import { FormatCodeError, isGeneralFormat } from "./format/code.js";
 import { goalSeekCommand, tableCommand } from "./analysis/commands.js";
+import {
+  applyScenarioCommand,
+  forgetScenarioCommand,
+  scenarioCommand,
+  summaryCommand,
+} from "./analysis/scenario-commands.js";
+import { ScenarioSet } from "./analysis/scenarios.js";
 import type { Ink } from "./analysis/commands.js";
 import { exportCsv, importCsv } from "./io/csv.js";
 
@@ -95,6 +102,16 @@ export const HELP = `
                             cross two inputs against one result
     .table B6 by B1 = 20..40/5 into D1
                             write the table into the sheet
+
+  ${paint(BOLD, "Scenarios")}
+    .scenario Base = B1:B3  capture those cells as they stand
+    .scenario Down = B1=25, B2=700
+                            define one explicitly
+    .scenario Down          show it against the sheet
+    .scenarios              every scenario
+    .apply Down             write it into the sheet
+    .unscenario Down        forget it
+    .summary B6:B8          every scenario, read over these results
 
   ${paint(BOLD, "CSV")}
     .csv [formulas|display] print the sheet as CSV
@@ -209,6 +226,14 @@ export class ReplSession {
    */
   private clipboard: Clipboard | null = null;
 
+  /**
+   * The session's scenarios.
+   *
+   * Beside the sheet rather than inside it, so undo cannot forget them - and
+   * so a structural edit has to move them explicitly, which `handle` does.
+   */
+  private scenarios = new ScenarioSet();
+
   /** Signals that the caller should exit; `handle` never exits by itself. */
   static readonly QUIT = Symbol("quit");
 
@@ -225,6 +250,7 @@ export class ReplSession {
       () => {
         this.book = new Workbook();
         this.clipboard = null;
+        this.scenarios = new ScenarioSet();
       },
       this.files,
       {
@@ -233,7 +259,12 @@ export class ReplSession {
           this.clipboard = clipboard;
         },
       },
+      this.scenarios,
     );
+  }
+
+  get scenarioSet(): ScenarioSet {
+    return this.scenarios;
   }
 }
 
@@ -277,6 +308,7 @@ function structuralEdit(
   tail: string,
   axis: Axis,
   operation: StructuralOperation,
+  scenarios: ScenarioSet | null = null,
 ): string {
   const usageAt = axis === "row" ? "3" : "C";
   const command = `.${operation}${axis === "row" ? "row" : "col"}`;
@@ -297,6 +329,10 @@ function structuralEdit(
 
   try {
     book.applyStructuralEdit({ axis, operation, at, count });
+    // Scenarios are not part of the sheet, so the sheet moving cannot move
+    // them. Left alone they would quietly start pointing at whatever landed
+    // at the old address.
+    scenarios?.adjust({ axis, operation, at, count });
   } catch (error) {
     if (error instanceof StructureError) return paint(RED, `  ${error.message}`);
     throw error;
@@ -351,6 +387,7 @@ function handle(
   reset: () => void,
   files: FileAccess | null = null,
   clipboard: ClipboardSlot | null = null,
+  scenarios: ScenarioSet | null = null,
 ): string | typeof ReplSession.QUIT | null {
   if (line === ".quit" || line === ".exit") {
     return ReplSession.QUIT;
@@ -575,7 +612,38 @@ function handle(
 
   for (const [command, axis, operation] of STRUCTURAL_COMMANDS) {
     if (line !== command && !line.startsWith(`${command} `)) continue;
-    return structuralEdit(book, line.slice(command.length), axis, operation);
+    return structuralEdit(
+      book,
+      line.slice(command.length),
+      axis,
+      operation,
+      scenarios,
+    );
+  }
+
+  if (line === ".scenarios") {
+    if (scenarios === null) return paint(RED, "  no scenarios in this session");
+    return scenarioCommand(book, scenarios, "", INK);
+  }
+
+  if (line === ".scenario" || line.startsWith(".scenario ")) {
+    if (scenarios === null) return paint(RED, "  no scenarios in this session");
+    return scenarioCommand(book, scenarios, line.slice(9), INK);
+  }
+
+  if (line === ".apply" || line.startsWith(".apply ")) {
+    if (scenarios === null) return paint(RED, "  no scenarios in this session");
+    return applyScenarioCommand(book, scenarios, line.slice(6), INK);
+  }
+
+  if (line === ".unscenario" || line.startsWith(".unscenario ")) {
+    if (scenarios === null) return paint(RED, "  no scenarios in this session");
+    return forgetScenarioCommand(scenarios, line.slice(11), INK);
+  }
+
+  if (line === ".summary" || line.startsWith(".summary ")) {
+    if (scenarios === null) return paint(RED, "  no scenarios in this session");
+    return summaryCommand(book, scenarios, line.slice(8), INK);
   }
 
   if (line === ".goalseek" || line.startsWith(".goalseek ")) {

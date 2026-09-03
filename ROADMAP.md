@@ -107,3 +107,13 @@ tree green and the public API usable.
 - [x] Goal seek, refusing the malformed cases before iterating and saying which one
 - [x] One-way and two-way sensitivity tables, written into the sheet or printed
 - [x] `.goalseek` and `.table` in the shell, with a compact axis syntax
+
+## Phase 14 — Scenarios
+
+- [x] A named set of assumptions, stored as inputs rather than values
+- [x] Capture the current contents of a set of cells as a scenario
+- [x] Apply a scenario as one undoable edit
+- [x] Report the formulas an apply would overwrite, before it writes
+- [x] Scenarios follow rows and columns through a structural edit
+- [x] A summary across every scenario, marking the results that actually move
+- [x] `.scenario`, `.scenarios`, `.apply`, `.unscenario` and `.summary` in the shell
