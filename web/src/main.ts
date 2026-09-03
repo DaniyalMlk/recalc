@@ -36,6 +36,41 @@ const elements: AppElements = {
   fileInput: need<HTMLInputElement>("file-input"),
   dropzone: need("dropzone"),
   sheet: need("sheet"),
+  cellPanel: need("panel-cell"),
+  cellTab: need<HTMLButtonElement>("tab-cell"),
+  whatIfTab: need<HTMLButtonElement>("tab-whatif"),
+  whatIf: {
+    panel: need("panel-whatif"),
+    modes: {
+      seek: need<HTMLButtonElement>("mode-seek"),
+      table: need<HTMLButtonElement>("mode-table"),
+      cases: need<HTMLButtonElement>("mode-cases"),
+    },
+    forms: {
+      seek: need<HTMLFormElement>("form-seek"),
+      table: need<HTMLFormElement>("form-table"),
+      cases: need<HTMLFormElement>("form-cases"),
+    },
+    out: need("whatif-out"),
+
+    seekTarget: need<HTMLInputElement>("seek-target"),
+    seekTo: need<HTMLInputElement>("seek-to"),
+    seekChanging: need<HTMLInputElement>("seek-changing"),
+    seekApply: need<HTMLButtonElement>("seek-apply"),
+
+    tableResult: need<HTMLInputElement>("table-result"),
+    tableInput: need<HTMLInputElement>("table-input"),
+    tableAxis: need<HTMLInputElement>("table-axis"),
+    tableCross: need<HTMLInputElement>("table-cross"),
+    tableCrossAxis: need<HTMLInputElement>("table-cross-axis"),
+    tableWrite: need<HTMLButtonElement>("table-write"),
+
+    caseName: need<HTMLInputElement>("case-name"),
+    caseSource: need("case-source"),
+    caseList: need("case-list"),
+    caseResults: need<HTMLInputElement>("case-results"),
+    caseSummary: need<HTMLButtonElement>("case-summary"),
+  },
 };
 
 const app = new App(elements);

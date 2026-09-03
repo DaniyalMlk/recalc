@@ -172,12 +172,229 @@
           </div>
         </section>
 
-        <aside class="inspector" id="inspector" aria-label="Cell inspector">
-          <div class="inspector__head">
-            <span class="inspector__title" id="inspector-title">A1</span>
-            <span class="inspector__kind" id="inspector-kind">blank</span>
+        <aside class="sidebar" aria-label="Cell inspector and what-if analysis">
+          <div class="sidebar__tabs" role="tablist" aria-label="Panel">
+            <button
+              class="tab"
+              type="button"
+              role="tab"
+              id="tab-cell"
+              aria-controls="panel-cell"
+              aria-selected="true"
+            >
+              Cell
+            </button>
+            <button
+              class="tab"
+              type="button"
+              role="tab"
+              id="tab-whatif"
+              aria-controls="panel-whatif"
+              aria-selected="false"
+            >
+              What-if
+            </button>
           </div>
-          <div class="inspector__body" id="inspector-body"></div>
+
+          <section
+            class="inspector"
+            id="panel-cell"
+            role="tabpanel"
+            aria-labelledby="tab-cell"
+          >
+            <div class="inspector__head">
+              <span class="inspector__title" id="inspector-title">A1</span>
+              <span class="inspector__kind" id="inspector-kind">blank</span>
+            </div>
+            <div class="inspector__body" id="inspector-body"></div>
+          </section>
+
+          <section
+            class="whatif"
+            id="panel-whatif"
+            role="tabpanel"
+            aria-labelledby="tab-whatif"
+            hidden
+          >
+            <div class="whatif__modes" role="tablist" aria-label="Analysis">
+              <button
+                class="pill"
+                type="button"
+                role="tab"
+                id="mode-seek"
+                aria-selected="true"
+              >
+                Goal seek
+              </button>
+              <button
+                class="pill"
+                type="button"
+                role="tab"
+                id="mode-table"
+                aria-selected="false"
+              >
+                Sensitivity
+              </button>
+              <button
+                class="pill"
+                type="button"
+                role="tab"
+                id="mode-cases"
+                aria-selected="false"
+              >
+                Scenarios
+              </button>
+            </div>
+
+            <form class="form" id="form-seek">
+              <p class="form__lede">
+                Find the input that brings a formula to a value.
+              </p>
+              <label class="field-row">
+                <span class="field-row__label">Result</span>
+                <input class="input" id="seek-target" spellcheck="false" />
+                <button
+                  class="pick"
+                  type="button"
+                  data-fill="seek-target"
+                  title="Use the selected cell"
+                >
+                  Use
+                </button>
+              </label>
+              <label class="field-row">
+                <span class="field-row__label">Goal</span>
+                <input class="input" id="seek-to" spellcheck="false" value="0" />
+                <span class="pick pick--ghost" aria-hidden="true">Use</span>
+              </label>
+              <label class="field-row">
+                <span class="field-row__label">Input</span>
+                <input class="input" id="seek-changing" spellcheck="false" />
+                <button
+                  class="pick"
+                  type="button"
+                  data-fill="seek-changing"
+                  title="Use the selected cell"
+                >
+                  Use
+                </button>
+              </label>
+              <div class="form__actions">
+                <button class="button button--primary" type="submit">Solve</button>
+                <button class="button" type="button" id="seek-apply">
+                  Solve and apply
+                </button>
+              </div>
+            </form>
+
+            <form class="form" id="form-table" hidden>
+              <p class="form__lede">
+                Walk an input across a range and read the result at each step.
+              </p>
+              <label class="field-row">
+                <span class="field-row__label">Result</span>
+                <input class="input" id="table-result" spellcheck="false" />
+                <button
+                  class="pick"
+                  type="button"
+                  data-fill="table-result"
+                  title="Use the selected cell"
+                >
+                  Use
+                </button>
+              </label>
+              <label class="field-row">
+                <span class="field-row__label">Input</span>
+                <input class="input" id="table-input" spellcheck="false" />
+                <button
+                  class="pick"
+                  type="button"
+                  data-fill="table-input"
+                  title="Use the selected cell"
+                >
+                  Use
+                </button>
+              </label>
+              <label class="field-row">
+                <span class="field-row__label">Across</span>
+                <input class="input input--wide" id="table-axis" spellcheck="false" />
+                <span class="pick pick--ghost" aria-hidden="true">Use</span>
+              </label>
+              <label class="field-row">
+                <span class="field-row__label">Second input</span>
+                <input class="input" id="table-cross" spellcheck="false" />
+                <button
+                  class="pick"
+                  type="button"
+                  data-fill="table-cross"
+                  title="Use the selected cell"
+                >
+                  Use
+                </button>
+              </label>
+              <label class="field-row">
+                <span class="field-row__label">Across</span>
+                <input
+                  class="input input--wide"
+                  id="table-cross-axis"
+                  spellcheck="false"
+                />
+                <span class="pick pick--ghost" aria-hidden="true">Use</span>
+              </label>
+              <p class="form__hint">
+                <code>20..40/5</code> spans a range,
+                <code>30~5/7</code> steps either side of a base case, or list
+                the values.
+              </p>
+              <div class="form__actions">
+                <button class="button button--primary" type="submit">Build</button>
+                <button class="button" type="button" id="table-write">
+                  Write at selection
+                </button>
+              </div>
+            </form>
+
+            <form class="form" id="form-cases" hidden>
+              <p class="form__lede">
+                Move a set of assumptions together, and compare the cases.
+              </p>
+              <label class="field-row">
+                <span class="field-row__label">Capture</span>
+                <input
+                  class="input"
+                  id="case-name"
+                  spellcheck="false"
+                  placeholder="Downside"
+                />
+                <button class="pick" type="submit" title="Capture the selection">
+                  Add
+                </button>
+              </label>
+              <p class="form__hint" id="case-source">
+                Takes the selected cells as they stand.
+              </p>
+              <ul class="cases" id="case-list"></ul>
+              <label class="field-row">
+                <span class="field-row__label">Compare</span>
+                <input class="input input--wide" id="case-results" spellcheck="false" />
+                <button
+                  class="pick"
+                  type="button"
+                  data-fill="case-results"
+                  title="Use the selected cells"
+                >
+                  Use
+                </button>
+              </label>
+              <div class="form__actions">
+                <button class="button button--primary" type="button" id="case-summary">
+                  Summarise
+                </button>
+              </div>
+            </form>
+
+            <div class="whatif__out" id="whatif-out" aria-live="polite"></div>
+          </section>
         </aside>
       </main>
 
