@@ -65,15 +65,29 @@ export interface GoalSeekResult {
 }
 
 /**
- * The default tolerance, scaled to the goal.
+ * The default tolerance, scaled to the size of the quantity involved.
  *
  * An absolute tolerance is wrong in both directions: 1e-9 is unreachable when
- * the goal is 8,500,000 and floating-point noise alone exceeds it, while being
- * far looser than needed when the goal is 0.03. Ten significant figures either
- * way is the same statement about precision at any magnitude.
+ * the answer is 8,500,000 and floating-point noise alone exceeds it, while
+ * being far looser than needed when the answer is 0.03. Ten significant
+ * figures is the same statement about precision at any magnitude.
+ *
+ * Scaling to the goal alone is not enough, because the most common goal is
+ * *zero* — break-even, NPV, a balancing plug — and zero has no magnitude to
+ * scale by. Seeking an NPV of 0 on a project worth 240,000 would then demand
+ * an absolute 1e-10, which is roughly fifteen significant figures on that
+ * number: unreachable, so a search that had plainly arrived would grind
+ * through the bracketing fallback and report failure at 9e-10.
+ *
+ * The cell's current value supplies the missing scale. It is what the model
+ * produces at its own assumptions, which is the best available statement of
+ * what "small" means for this particular quantity.
  */
-function defaultTolerance(goal: number): number {
-  return Math.max(Math.abs(goal), 1) * 1e-10;
+function defaultTolerance(goal: number, current: number): number {
+  return (
+    Math.max(Math.abs(goal), Number.isFinite(current) ? Math.abs(current) : 0, 1)
+    * 1e-10
+  );
 }
 
 function numericOr(value: unknown): number | null {
@@ -155,7 +169,8 @@ export function goalSeek(
   }
 
   const goal = request.to;
-  const tolerance = request.tolerance ?? defaultTolerance(goal);
+  const tolerance =
+    request.tolerance ?? defaultTolerance(goal, numericOr(current) ?? 0);
 
   // Each evaluation is one incremental recalculation of the sheet under a
   // trial value. Nothing here is journalled and nothing survives the call.

@@ -61,7 +61,12 @@ describe("goalSeek", () => {
     const book = breakEven();
     const result = goalSeek(book, { target: "B5", to: 0, changing: "B2" });
     expect(result.converged).toBe(true);
-    expect(result.value).toBeCloseTo(20000 / 12, 9);
+    // The tolerance is scaled to the size of the profit line, so the answer is
+    // rounded to the coarsest form that still lands inside it rather than
+    // carrying every digit of 20000/12. What has to hold is the contract:
+    // the target arrives at the goal.
+    expect(result.value).toBeCloseTo(20000 / 12, 6);
+    expect(result.achieved).toBeCloseTo(0, 6);
   });
 
   it("solves through a chain of formulas", () => {
@@ -195,6 +200,67 @@ describe("goalSeek", () => {
     });
     expect(result.converged).toBe(false);
     expect(result.value).toBeGreaterThanOrEqual(40);
+  });
+});
+
+describe("goalSeek tolerance", () => {
+  it("scales the tolerance to the size of the target, not just the goal", () => {
+    // The most common goal is zero - break-even, NPV, a balancing plug - and
+    // zero has no magnitude to scale by. On a project whose NPV runs to the
+    // hundreds of thousands, an absolute 1e-10 is around fifteen significant
+    // figures: unreachable, so a search that has plainly arrived would grind
+    // through the bracketing fallback and report failure.
+    const book = new Workbook();
+    book.setCells({
+      A1: 0.11,
+      B1: -2_400_000,
+      C1: 900_000,
+      D1: 1_650_000,
+      E1: 2_300_000,
+      F1: "=B1+NPV(A1,C1:E1)",
+    });
+    const result = goalSeek(book, { target: "F1", to: 0, changing: "A1" });
+    expect(result.converged).toBe(true);
+    expect(result.evaluations).toBeLessThan(20);
+    // Ten significant figures against a target of this size, not against 1.
+    expect(Math.abs(result.achieved)).toBeLessThan(1e-3);
+  });
+
+  it("still holds a tight line on a small target", () => {
+    const book = new Workbook();
+    book.setCells({ A1: 0.5, B1: "=A1*2-0.5" });
+    const result = goalSeek(book, { target: "B1", to: 0, changing: "A1" });
+    expect(result.converged).toBe(true);
+    expect(result.value).toBeCloseTo(0.25, 12);
+  });
+
+  it("takes an explicit tolerance over the default", () => {
+    // Tighter than the default, which scales to a profit line of -5,600 and
+    // so allows about 5.6e-7.
+    const book = breakEven();
+    const result = goalSeek(book, {
+      target: "B5",
+      to: 0,
+      changing: "B1",
+      tolerance: 1e-9,
+    });
+    expect(result.converged).toBe(true);
+    expect(Math.abs(result.achieved)).toBeLessThanOrEqual(1e-9);
+  });
+
+  it("reports failure rather than pretending on an unreachable tolerance", () => {
+    // The residual on this model steps in units of about 1200 * eps, near
+    // 4e-12, so 1e-14 is below what doubles can express here. Saying so beats
+    // rounding down to a number that looks converged.
+    const book = breakEven();
+    const result = goalSeek(book, {
+      target: "B5",
+      to: 0,
+      changing: "B1",
+      tolerance: 1e-14,
+    });
+    expect(result.converged).toBe(false);
+    expect(result.value).toBeCloseTo(18 + 20000 / 1200, 9);
   });
 });
 
