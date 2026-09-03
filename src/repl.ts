@@ -16,6 +16,8 @@ import type { Axis, StructuralOperation } from "./engine/structure.js";
 import { registeredFunctionNames, lookupFunction } from "./functions/index.js";
 import { NameError, parseTarget } from "./engine/names.js";
 import { FormatCodeError, isGeneralFormat } from "./format/code.js";
+import { goalSeekCommand, tableCommand } from "./analysis/commands.js";
+import type { Ink } from "./analysis/commands.js";
 import { exportCsv, importCsv } from "./io/csv.js";
 
 // Written as an escape sequence so the source stays plain text.
@@ -81,12 +83,32 @@ export const HELP = `
     .insertcol C [n]        open n blank columns left of column C
     .deletecol C [n]        remove n columns from column C right
 
+  ${paint(BOLD, "What-if")}
+    .goalseek B5 = 0 by B1  find the B1 that brings B5 to 0
+    .goalseek B5 = 0 by B1 apply
+                            and write it into B1
+    .table B6 by B1 = 20..40/5
+                            walk B1 from 20 to 40 in 5 steps
+    .table B5,B6 by B1 = 30~5/7
+                            7 steps of 5 either side of 30
+    .table B6 by B1 = 25,30,35 x B2 = 500..2000/4
+                            cross two inputs against one result
+    .table B6 by B1 = 20..40/5 into D1
+                            write the table into the sheet
+
   ${paint(BOLD, "CSV")}
     .csv [formulas|display] print the sheet as CSV
     .import data.csv [A1]   read a CSV file into the sheet
     .export out.csv [formulas|display]
                             write the sheet to a CSV file
 `;
+
+/** How the what-if commands colour their output at this prompt. */
+const INK: Ink = {
+  ok: (text) => paint(BOLD, text),
+  bad: (text) => paint(RED, text),
+  dim: (text) => paint(DIM, text),
+};
 
 /**
  * File access, injected rather than imported.
@@ -554,6 +576,14 @@ function handle(
   for (const [command, axis, operation] of STRUCTURAL_COMMANDS) {
     if (line !== command && !line.startsWith(`${command} `)) continue;
     return structuralEdit(book, line.slice(command.length), axis, operation);
+  }
+
+  if (line === ".goalseek" || line.startsWith(".goalseek ")) {
+    return goalSeekCommand(book, line.slice(9), INK);
+  }
+
+  if (line === ".table" || line.startsWith(".table ")) {
+    return tableCommand(book, line.slice(6), INK);
   }
 
   if (line === ".csv" || line.startsWith(".csv ")) {
