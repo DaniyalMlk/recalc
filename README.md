@@ -20,8 +20,9 @@ reference model, the dependency graph, the evaluator, a function library of 98
 functions including a financial pack, CSV interchange, named ranges, a
 benchmark harness, structural editing that rewrites every formula in the sheet
 when rows and columns move, block editing with fill, clipboard and undo, number
-formats that follow their cells through every one of those operations, and a
-web interface where all of it is reachable from a virtualised grid.
+formats that follow their cells through every one of those operations, what-if
+analysis with goal seek and sensitivity tables, and a web interface where all of
+it is reachable from a virtualised grid.
 
 ## Using it as a library
 
@@ -132,6 +133,86 @@ thousands-scaling commas, `%`, quoted literals, `\` escapes, `_` width skips,
 Date and fraction codes are rejected with the offset of the offending
 character rather than silently mis-formatted.
 
+## What-if analysis
+
+A model's single number is the least interesting thing about it. The two
+questions worth asking of one are *what input gets me this output* and *how
+does the output move as the input moves*, and both are the same primitive: run
+the sheet with a cell temporarily holding something else, read a result, put
+the sheet back.
+
+```ts
+import { Workbook, goalSeek, twoWayTable, series } from "recalc";
+
+const book = new Workbook();
+book.setCells({
+  B1: 30,       // price
+  B2: 1000,     // units
+  B3: 18,       // unit cost
+  B4: 8000,     // fixed cost
+  B6: "=(B1-B3)*B2-B4",
+});
+
+goalSeek(book, { target: "B6", to: 0, changing: "B1" });
+// { converged: true, value: 26, achieved: 0, startedFrom: 30, evaluations: 4 }
+
+twoWayTable(book, {
+  rowInput: "B1", rowValues: [25, 30, 35],
+  columnInput: "B2", columnValues: series(500, 2000, 4),
+  result: "B6",
+}).grid;
+// [[-4500, -1000,  2500,  6000],
+//  [-2000,  4000, 10000, 16000],
+//  [  500,  9000, 17500, 26000]]
+```
+
+Nothing above touches the sheet. `Workbook.trial` writes the overrides,
+suspends journalling, runs the body and restores the original input in a
+`finally`, so a body that throws cannot leave a trial value behind and the undo
+history never sees any of it. `applyGoalSeek` is the one function that commits,
+and it writes one undoable edit.
+
+**Goal seek says why it failed.** A search that grinds through four hundred
+recalculations and reports non-convergence looks identical, from the outside,
+to one where the target never read the changing cell — and those call for
+completely different responses. The graph can tell them apart, so it is asked
+first:
+
+```
+recalc> .goalseek B6 = 0 by B1
+  B1 = 26  (not applied - add `apply` to write it)
+  B6 reaches 0 from 30 in 4 recalculation(s)
+
+recalc> .goalseek B6 = 0 by B5
+  B5 holds a formula; goal seek can only vary a cell that holds a value
+
+recalc> .goalseek B6 = 0 by A9
+  B6 does not depend on A9, so changing it cannot move the result
+```
+
+The last one costs zero recalculations. It is a fact about the graph, not a
+search that gave up.
+
+**Tables take an axis, not a list.** `20..40/5` is five points across a span,
+`30~5/7` is seven points centred on a base case, and a comma list is exactly
+what it says — including text, so a scenario switch spelled `grow` sits in an
+axis beside a rate:
+
+```
+recalc> .table B6 by B1 = 25,30,35 x B2 = 500..2000/4
+  B6    500   1000   1500   2000
+  25  -4500  -1000   2500   6000
+  30  -2000   4000  10000  16000
+  35    500   9000  17500  26000
+
+recalc> .table B5,B6 by B1 = 30~5/3 into D1
+  12 cell(s) written at D1
+```
+
+A written table lands as literals rather than formulas: it is a record of what
+the model produced under those inputs, and re-deriving it later from a sheet
+that has moved on would make it silently wrong.
+
 ## Using it from the browser
 
 ```bash
@@ -196,8 +277,10 @@ recalc> B6
 `.filldown B1:B9`, `.fillright B2:F2`, `.copy A1:C3`, `.paste D5`, `.undo`,
 `.redo`; for rows and columns
 `.insertrow 3 [n]`, `.deleterow 3 [n]`, `.insertcol C [n]`, `.deletecol C [n]`;
-for number formats `.format B2:B13 = #,##0.00`, `.format B2`, `.formats`; and
-for CSV `.csv [formulas|display]`, `.import data.csv [A1]`,
+for number formats `.format B2:B13 = #,##0.00`, `.format B2`, `.formats`; for
+what-if `.goalseek B6 = 0 by B1 [apply]` and
+`.table B6 by B1 = 20..40/5 [x B2 = 500..2000/4] [into D1]`; and for CSV
+`.csv [formulas|display]`, `.import data.csv [A1]`,
 `.export out.csv [formulas|display]`.
 
 ## Install and run
@@ -211,6 +294,7 @@ npm run build:web # emits web/dist/
 npm run repl      # interactive shell
 npm run web       # dev server for the grid
 npm run bench     # recalculation measurements
+npm run bench:whatif # goal seek and sensitivity table measurements
 ```
 
 ## Design decisions that mattered
@@ -403,6 +487,23 @@ The last three rows are the design claim under test: an edit whose cell has no
 dependents costs the same in a 100,000-cell sheet as in a 2,000-cell one. Going
 through a named range rather than a written-out one costs about a fifth more on
 this workload, which is the price of the extra indirection at definition time.
+
+`npm run bench:whatif` measures the same claim from the analysis side. The same
+10x10 sensitivity grid over the same model, with 0, 10,000 and 50,000 unrelated
+cells sitting beside it:
+
+```
+shape                                       recalcs  total ms  ms each
+10x10 over depth 50, 0 idle cells               100      26.9    0.269
+10x10 over depth 50, 10000 idle cells           100      26.3    0.263
+10x10 over depth 50, 50000 idle cells           100      29.0    0.290
+10x10 over depth 200, 50000 idle cells          100     115.4    1.154
+25x25 over depth 50, 50000 idle cells           625     149.6    0.239
+```
+
+Flat as the sheet grows around the model, and proportional to the model's own
+depth — which is what makes a grid of several hundred points a table rather
+than a wait.
 
 ## Known gaps
 
