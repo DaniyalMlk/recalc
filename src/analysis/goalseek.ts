@@ -13,6 +13,7 @@
 import { isFormulaError } from "../engine/errors.js";
 import { formatA1, parseA1 } from "../engine/reference.js";
 import type { Coord } from "../engine/reference.js";
+import type { Value } from "../engine/value.js";
 import type { Address, Workbook } from "../engine/workbook.js";
 import { findRoot } from "./solve.js";
 import type { SolveFailure } from "./solve.js";
@@ -178,18 +179,61 @@ export function goalSeek(
   const achieved = Number.isNaN(outcome.fx) ? Number.NaN : outcome.fx + goal;
 
   if (outcome.converged) {
+    const tidied = polish(
+      (x) => book.probe([[changingLabel, String(x)]], targetLabel),
+      outcome.x,
+      goal,
+      tolerance,
+    );
     return {
       converged: true,
-      value: outcome.x,
-      achieved,
+      value: tidied?.x ?? outcome.x,
+      achieved: tidied?.fx ?? achieved,
       startedFrom: start,
-      evaluations: outcome.evaluations,
+      evaluations: outcome.evaluations + (tidied?.evaluations ?? 0),
     };
   }
 
   const problem: GoalSeekProblem =
     outcome.failure === "not-numeric" ? "target-not-numeric" : "no-convergence";
   return fail(problem, start, outcome.x, achieved, outcome.evaluations);
+}
+
+/**
+ * Round the answer to the coarsest form that still hits the goal.
+ *
+ * A secant search lands on 26.000000000000004 and the sheet reports "set the
+ * price to 26, and profit reaches 9.3e-11" — two lines that contradict each
+ * other, because if the price really were 26 the profit would be zero. The
+ * search is not wrong; the last few bits are noise it has no way to shed.
+ *
+ * So the candidates are tried coarsest-first, and the first one still inside
+ * the caller's own tolerance wins. That is not a fudge: the tolerance is the
+ * caller's definition of "reaches the goal", and a rounder input meeting it is
+ * a better answer to the question that was asked. A root that genuinely sits
+ * at 25.7 rejects every coarser candidate and keeps its digits.
+ */
+function polish(
+  at: (x: number) => Value,
+  x: number,
+  goal: number,
+  tolerance: number,
+): { x: number; fx: number; evaluations: number } | null {
+  const candidates = [
+    Math.round(x),
+    ...[3, 6, 9, 12].map((digits) => Number(x.toPrecision(digits))),
+  ];
+
+  let evaluations = 0;
+  for (const candidate of candidates) {
+    if (candidate === x || !Number.isFinite(candidate)) continue;
+    evaluations++;
+    const value = numericOr(at(candidate));
+    if (value !== null && Math.abs(value - goal) <= tolerance) {
+      return { x: candidate, fx: value, evaluations };
+    }
+  }
+  return null;
 }
 
 /** What the solver could not do, in the solver's own words. */

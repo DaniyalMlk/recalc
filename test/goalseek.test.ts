@@ -198,6 +198,63 @@ describe("goalSeek", () => {
   });
 });
 
+describe("goalSeek polish", () => {
+  it("returns a round answer when a round answer hits the goal", () => {
+    const book = breakEven();
+    book.setCell("B4", 14400);
+    // (p - 18) * 1200 = 14400  ->  p = 30 exactly.
+    const result = goalSeek(book, { target: "B5", to: 0, changing: "B1" });
+    expect(result.converged).toBe(true);
+    expect(result.value).toBe(30);
+    expect(result.achieved).toBe(0);
+  });
+
+  it("keeps the digits when the root is not round", () => {
+    const book = breakEven();
+    const result = goalSeek(book, { target: "B5", to: 0, changing: "B1" });
+    expect(result.converged).toBe(true);
+    // 18 + 50/3 is not expressible in a few digits, so nothing is rounded away.
+    expect(result.value).not.toBe(35);
+    expect(result.value).toBeCloseTo(18 + 20000 / 1200, 9);
+  });
+
+  it("does not round past the tolerance it was given", () => {
+    const book = breakEven();
+    book.setCell("B4", 14412);
+    // The true root is 30.01; rounding to 30 would miss the goal by 12.
+    const result = goalSeek(book, { target: "B5", to: 0, changing: "B1" });
+    expect(result.converged).toBe(true);
+    expect(result.value).toBeCloseTo(30.01, 9);
+  });
+
+  it("rounds when a loose tolerance permits it", () => {
+    const book = breakEven();
+    book.setCell("B4", 14412);
+    const result = goalSeek(book, {
+      target: "B5",
+      to: 0,
+      changing: "B1",
+      tolerance: 100,
+    });
+    expect(result.converged).toBe(true);
+    expect(result.value).toBe(30);
+  });
+
+  it("reports the value it actually achieved after rounding", () => {
+    const book = breakEven();
+    book.setCell("B4", 14412);
+    const result = goalSeek(book, {
+      target: "B5",
+      to: 0,
+      changing: "B1",
+      tolerance: 100,
+    });
+    // Rounding to 30 leaves the target at -12, and that is what is reported.
+    expect(result.achieved).toBeCloseTo(-12, 9);
+    expect(book.probe([["B1", "30"]], "B5")).toBeCloseTo(result.achieved, 9);
+  });
+});
+
 describe("goalSeek refusals", () => {
   it("refuses to overwrite a formula", () => {
     const book = new Workbook();
