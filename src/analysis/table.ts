@@ -215,6 +215,28 @@ export function around(centre: number, step: number, count: number): number[] {
 }
 
 /**
+ * A writer positioned at an origin, addressing cells by offset.
+ *
+ * Both table shapes lay out the same way — a header row, a header column and a
+ * body — and differ only in what goes where, so the addressing is shared and
+ * each writer says only what it puts down.
+ */
+function placer(book: Workbook, at: Address) {
+  const origin: Coord =
+    typeof at === "string" ? parseA1(at) : { col: at.col, row: at.row };
+  const entries: Record<string, string | number> = {};
+  return {
+    put(col: number, row: number, input: string | number) {
+      entries[label({ col: origin.col + col, row: origin.row + row })] = input;
+    },
+    commit(): { cells: number } {
+      book.setCells(entries);
+      return { cells: Object.keys(entries).length };
+    },
+  };
+}
+
+/**
  * Lay a two-way table into the sheet as literals, with its headers.
  *
  * The corner cell carries the result's address, the way a spreadsheet's own
@@ -228,25 +250,44 @@ export function writeTwoWayTable(
   at: Address,
   table: TwoWayTable,
 ): { cells: number } {
-  const origin: Coord =
-    typeof at === "string" ? parseA1(at) : { col: at.col, row: at.row };
+  const sheet = placer(book, at);
 
-  const entries: Record<string, string | number> = {};
-  const put = (col: number, row: number, input: string | number) => {
-    entries[label({ col: origin.col + col, row: origin.row + row })] = input;
-  };
-
-  put(0, 0, `'${table.result}`);
-  table.columnValues.forEach((value, i) => put(i + 1, 0, `'${value}`));
+  sheet.put(0, 0, `'${table.result}`);
+  table.columnValues.forEach((value, i) => sheet.put(i + 1, 0, `'${value}`));
   table.rowValues.forEach((value, r) => {
-    put(0, r + 1, `'${value}`);
+    sheet.put(0, r + 1, `'${value}`);
     (table.grid[r] ?? []).forEach((cell, c) => {
-      put(c + 1, r + 1, cell === null ? "" : formatCell(cell));
+      sheet.put(c + 1, r + 1, formatCell(cell));
     });
   });
 
-  book.setCells(entries);
-  return { cells: Object.keys(entries).length };
+  return sheet.commit();
+}
+
+/**
+ * Lay a one-way table into the sheet: the input down the left, one column per
+ * result, headed by the address it came from.
+ *
+ * The corner holds the input's address, so the block reads as "this input
+ * against these outputs" with nothing else written around it.
+ */
+export function writeOneWayTable(
+  book: Workbook,
+  at: Address,
+  table: OneWayTable,
+): { cells: number } {
+  const sheet = placer(book, at);
+
+  sheet.put(0, 0, `'${table.input}`);
+  table.results.forEach((address, i) => sheet.put(i + 1, 0, `'${address}`));
+  table.values.forEach((value, r) => {
+    sheet.put(0, r + 1, `'${value}`);
+    (table.rows[r] ?? []).forEach((cell, c) => {
+      sheet.put(c + 1, r + 1, formatCell(cell));
+    });
+  });
+
+  return sheet.commit();
 }
 
 /**
