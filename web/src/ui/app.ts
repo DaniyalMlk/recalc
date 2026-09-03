@@ -45,6 +45,8 @@ import {
 import { GridView } from "./grid-view.js";
 import type { CellPaint, MenuTarget } from "./grid-view.js";
 import { Inspector } from "./inspector.js";
+import { WhatIfPanel } from "./whatif-panel.js";
+import type { WhatIfElements } from "./whatif-panel.js";
 import { ContextMenu } from "./menu.js";
 
 /**
@@ -120,6 +122,10 @@ export interface AppElements {
   readonly fileInput: HTMLInputElement;
   readonly dropzone: HTMLElement;
   readonly sheet: HTMLElement;
+  readonly cellPanel: HTMLElement;
+  readonly cellTab: HTMLButtonElement;
+  readonly whatIfTab: HTMLButtonElement;
+  readonly whatIf: WhatIfElements;
 }
 
 export class App {
@@ -133,6 +139,7 @@ export class App {
 
   private readonly grid: GridView;
   private readonly inspector: Inspector;
+  private readonly whatIf: WhatIfPanel;
   private readonly menu: ContextMenu;
 
   private editing: Editing | null = null;
@@ -189,10 +196,42 @@ export class App {
       (address) => this.goTo(address),
     );
 
+    this.whatIf = new WhatIfPanel(el.whatIf, {
+      workbook: this.workbook,
+      activeAddress: () => this.address(this.selection.active),
+      selectionBlock: () => this.selectedLabel(),
+      afterEdit: (message) => {
+        this.lastRecalc = message;
+        this.grid.render();
+        this.syncSelection();
+      },
+    });
+
     this.bindKeyboard();
     this.bindEditors();
     this.bindActions();
     this.bindInterchange();
+    this.bindPanels();
+  }
+
+  /**
+   * The sidebar shows one of two panels.
+   *
+   * A `hidden` toggle with no transition. This is a control someone presses
+   * dozens of times an hour, and an animation on it would be slower on the
+   * twentieth press than on the first - the surest way to make a fast
+   * interface feel slow.
+   */
+  private bindPanels(): void {
+    const show = (whatIf: boolean) => {
+      this.el.cellPanel.hidden = whatIf;
+      this.el.whatIf.panel.hidden = !whatIf;
+      this.el.cellTab.setAttribute("aria-selected", String(!whatIf));
+      this.el.whatIfTab.setAttribute("aria-selected", String(whatIf));
+      if (whatIf) this.whatIf.syncSelection();
+    };
+    this.el.cellTab.addEventListener("click", () => show(false));
+    this.el.whatIfTab.addEventListener("click", () => show(true));
   }
 
   /** Fill the sheet with the worked example and draw everything. */
@@ -560,18 +599,30 @@ export class App {
           break;
         case "insert-rows":
           this.workbook.insertRows(rect.top, rows);
+          // Scenarios sit beside the sheet, so the sheet moving cannot move
+          // them. Left alone they would start setting whatever landed here.
+          this.whatIf.scenarioSet.adjust({ axis: "row", operation: "insert", at: rect.top, count: rows });
           this.lastRecalc = `${rows} row${rows === 1 ? "" : "s"} inserted`;
           break;
         case "delete-rows":
           this.workbook.deleteRows(rect.top, rows);
+          // Scenarios sit beside the sheet, so the sheet moving cannot move
+          // them. Left alone they would start setting whatever landed here.
+          this.whatIf.scenarioSet.adjust({ axis: "row", operation: "delete", at: rect.top, count: rows });
           this.lastRecalc = `${rows} row${rows === 1 ? "" : "s"} deleted`;
           break;
         case "insert-columns":
           this.workbook.insertColumns(rect.left, cols);
+          // Scenarios sit beside the sheet, so the sheet moving cannot move
+          // them. Left alone they would start setting whatever landed here.
+          this.whatIf.scenarioSet.adjust({ axis: "column", operation: "insert", at: rect.left, count: cols });
           this.lastRecalc = `${cols} column${cols === 1 ? "" : "s"} inserted`;
           break;
         case "delete-columns":
           this.workbook.deleteColumns(rect.left, cols);
+          // Scenarios sit beside the sheet, so the sheet moving cannot move
+          // them. Left alone they would start setting whatever landed here.
+          this.whatIf.scenarioSet.adjust({ axis: "column", operation: "delete", at: rect.left, count: cols });
           this.lastRecalc = `${cols} column${cols === 1 ? "" : "s"} deleted`;
           break;
         case "undo":
@@ -594,6 +645,10 @@ export class App {
 
   /** Put the screen back in step with the sheet after a command ran. */
   private afterCommand(id: CommandId): void {
+    // A scenario's conflicts depend on what the cells hold now, so the list
+    // has to be re-read whenever the sheet moves under it.
+    this.whatIf.refresh();
+
     // A structural edit can move the cell the clipboard was taken from, so the
     // outline would point at the wrong block; the copy itself stays usable.
     if (id.startsWith("insert-") || id.startsWith("delete-") || id === "cut") {

@@ -38,6 +38,10 @@ describe("series", () => {
     expect(series(0, 10, 5)).toEqual([0, 2.5, 5, 7.5, 10]);
   });
 
+  it("does not accumulate float noise across the span", () => {
+    expect(series(0.1, 0.7, 4)).toEqual([0.1, 0.3, 0.5, 0.7]);
+  });
+
   it("lands on the endpoint exactly", () => {
     const values = series(0.05, 0.15, 11);
     expect(values[10]).toBe(0.15);
@@ -73,6 +77,16 @@ describe("around", () => {
 
   it("rejects a non-positive count", () => {
     expect(() => around(1, 1, -3)).toThrow(TableError);
+  });
+
+  it("does not accumulate float noise into a header", () => {
+    // 0.18 + 0.05 is 0.22999999999999998 in binary floating point, and that
+    // in a column header reads as a bug rather than as precision.
+    expect(around(0.18, 0.05, 3)).toEqual([0.13, 0.18, 0.23]);
+  });
+
+  it("keeps a value that genuinely needs its digits", () => {
+    expect(around(1 / 3, 1, 1)).toEqual([0.333333333333]);
   });
 });
 
