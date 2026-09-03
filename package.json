@@ -19,7 +19,8 @@
     "test:watch": "vitest",
     "repl": "tsx src/cli.ts",
     "bench": "tsx bench/recalc.bench.ts",
-    "web": "vite --config web/vite.config.ts"
+    "web": "vite --config web/vite.config.ts",
+    "bench:whatif": "tsx bench/whatif.bench.ts"
   },
   "keywords": [
     "spreadsheet",

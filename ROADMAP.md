@@ -98,3 +98,12 @@ tree green and the public API usable.
 - [x] Shell commands to apply, inspect and clear a format
 - [x] Format menu in the grid, previewing each choice on the selected value
 - [x] CSV export of the sheet as it is shown, alongside values and formulas
+
+## Phase 13 — What-if analysis
+
+- [x] Evaluate the sheet under temporary overrides, restoring it afterwards and journalling nothing
+- [x] Answer from the graph whether a result depends on an input at all
+- [x] A scale-aware root finder: secant, expanding bracket, bisection
+- [x] Goal seek, refusing the malformed cases before iterating and saying which one
+- [x] One-way and two-way sensitivity tables, written into the sheet or printed
+- [x] `.goalseek` and `.table` in the shell, with a compact axis syntax
