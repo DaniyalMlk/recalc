@@ -20,11 +20,13 @@
   --ink-mute: #6f6a60;
 
   --accent: #1f5f4e;
+  --accent-deep: #1a5142;
   --accent-soft: rgba(31, 95, 78, 0.1);
   --accent-line: rgba(31, 95, 78, 0.35);
 
   --danger: #9f2f2d;
   --danger-soft: #fbeae9;
+  --danger-line: rgba(159, 47, 45, 0.35);
 
   /*
    * The eight colours a number format may name. Read off the sheet's own ink
@@ -1058,8 +1060,8 @@ body {
 }
 
 .button--primary:hover {
-  background: #1a5142;
-  border-color: #1a5142;
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
 }
 
 .cases {
@@ -1131,7 +1133,7 @@ body {
 }
 
 .result--error {
-  border-color: rgba(159, 47, 45, 0.35);
+  border-color: var(--danger-line);
   background: var(--danger-soft);
 }
 
@@ -1223,9 +1225,17 @@ body {
   border-bottom: 0;
 }
 
+/*
+ * A dimmed row still carries numbers someone reads.
+ *
+ * Colour alone does the dimming: --ink-mute against white is 5.4:1, while the
+ * same colour at 62% opacity comes out around 2.5:1, which is below the 4.5:1
+ * floor for body text. It looked right and would have been unreadable for
+ * anyone it mattered to. Against --ink on the rows that do move, the
+ * difference is still unmistakable.
+ */
 .grid-out tr[data-muted="true"] td {
   color: var(--ink-mute);
-  opacity: 0.62;
 }
 
 .grid-wrap {
