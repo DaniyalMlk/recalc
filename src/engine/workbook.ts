@@ -871,6 +871,76 @@ export class Workbook {
   }
 
   /**
+   * Whether `dependent` would be recomputed if `precedent` changed.
+   *
+   * The graph already knows this exactly, which is worth more than it sounds:
+   * an analysis that asks "does this output respond to this input" can get a
+   * definite no instead of iterating a hundred times and reporting that it
+   * failed to converge. The two answers look the same from the outside and
+   * mean entirely different things.
+   *
+   * A cell is not treated as depending on itself, so a formula asked about its
+   * own cell answers false rather than true-by-reflexivity.
+   */
+  dependsOn(dependent: Address, precedent: Address): boolean {
+    const from = toCoord(precedent);
+    const to = toCoord(dependent);
+    if (from.col === to.col && from.row === to.row) return false;
+    return this.graph.transitiveDependents([from]).has(cellKey(to));
+  }
+
+  /**
+   * Run `body` with some cells temporarily holding different input, then put
+   * the sheet back exactly as it was.
+   *
+   * This is the primitive underneath goal seek and sensitivity tables: both
+   * need to know what the sheet *would* show, thousands of times, without any
+   * of those probes becoming an edit. Nothing is journalled, so the undo
+   * history is untouched, and the restore runs on the exception path as well —
+   * a body that throws must not be able to leave a trial value in the sheet.
+   *
+   * Recalculation still runs incrementally, so a trial costs what the override
+   * actually invalidated rather than a pass over the sheet. That is the whole
+   * reason a table of a thousand points is affordable.
+   */
+  trial<T>(
+    overrides: Iterable<readonly [Address, string]>,
+    body: () => T,
+  ): T {
+    const updates = [...overrides].map(
+      ([address, input]) => [toCoord(address), input] as const,
+    );
+    const restore = updates.map(
+      ([coord]) => [coord, this.cells.get(coord)?.input ?? ""] as const,
+    );
+
+    // A nested trial must not clear the flag its caller set, so the previous
+    // value is restored rather than assumed to have been false.
+    const wasRecording = this.recording;
+    this.recording = true;
+    try {
+      this.writeInputs(updates);
+      return body();
+    } finally {
+      this.writeInputs(restore);
+      this.recording = wasRecording;
+    }
+  }
+
+  /**
+   * What `read` would show if `overrides` were entered.
+   *
+   * The common shape of a trial, named because analysis code asks this
+   * question far more often than it asks anything else.
+   */
+  probe(
+    overrides: Iterable<readonly [Address, string]>,
+    read: Address,
+  ): Value {
+    return this.trial(overrides, () => this.getValue(read));
+  }
+
+  /**
    * Record what a cell reads, with any names it mentions expanded to the
    * cells and ranges they stand for.
    *
