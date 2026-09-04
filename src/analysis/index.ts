@@ -35,6 +35,14 @@ export type {
   TwoWayTable,
 } from "./table.js";
 
+export {
+  MAX_SCHEDULE_PERIODS,
+  ScheduleError,
+  amortisationSchedule,
+  writeSchedule,
+} from "./amortisation.js";
+export type { Schedule, SchedulePeriod } from "./amortisation.js";
+
 export { ScenarioError, ScenarioSet } from "./scenarios.js";
 export type {
   ApplyResult,

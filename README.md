@@ -16,9 +16,9 @@ formula depends on, and recalculates only what an edit actually invalidated.
 ## Status
 
 Every phase in [ROADMAP.md](ROADMAP.md) is complete: the formula grammar, the
-reference model, the dependency graph, the evaluator, a function library of 118
-functions including financial and date packs, day-count conventions, CSV
-interchange, named ranges, a
+reference model, the dependency graph, the evaluator, a function library of 123
+functions including financial, date and amortisation packs, day-count
+conventions, debt schedules, CSV interchange, named ranges, a
 benchmark harness, structural editing that rewrites every formula in the sheet
 when rows and columns move, block editing with fill, clipboard and undo, number
 formats that follow their cells through every one of those operations, what-if
@@ -216,6 +216,61 @@ been read, because in `m:ss` only the `ss` says so. `AM/PM` (or `A/P`) puts the
 hour on a 12-hour clock. The bracketed codes `[h]`, `[m]` and `[s]` are
 durations: they accumulate rather than wrap, which is what makes a day and a
 half print as `36:00`.
+
+## Debt schedules
+
+`PMT` gives the instalment. What a model is actually built on is the *split*:
+how much of that instalment is interest and how much repays principal, period
+by period.
+
+```
+=IPMT(0.09/12, 13, 360, 125000)          →  -931.10
+=PPMT(0.09/12, 13, 360, 125000)          →   -74.68
+=CUMIPMT(0.09/12, 360, 125000, 13, 24, 0) → -11135.23   (a year's interest)
+=CUMPRINC(0.09/12, 360, 125000, 13, 24, 0) →  -934.11   (a year's principal)
+```
+
+The split is computed in closed form, not by walking the loan. After `k−1`
+payments the outstanding balance is a future value, and the interest charged
+next is the rate on that balance — so `IPMT` for period 300 costs the same as
+for period 1, and its answer does not depend on how many other periods the
+sheet happened to evaluate first.
+
+The whole loan laid out is a schedule, from the shell or from the library:
+
+```
+> .amortise 250000 at 5.5%/12 over 360
+    period    opening     payment    interest   principal    closing
+         1     250000  -1419.4725  -1145.8333  -273.63917  249726.36
+         2  249726.36  -1419.4725  -1144.5792  -274.89335  249451.47
+         3  249451.47  -1419.4725  -1143.3192  -276.15328  249175.31
+  … 354 more
+       359  2819.5459  -1419.4725  -12.922919  -1406.5496  1412.9963
+       360  1412.9963  -1419.4725  -6.4762329  -1412.9963          0
+     total              -511010.1   -261010.1     -250000
+```
+
+The rate is written the way a term sheet writes it — an annual percentage over
+the number of payments in a year — because dividing it by hand before typing is
+exactly the step people get wrong. A balloon is a balance left at the end:
+
+```
+> .amortise 1000000 at 6%/4 over 20 balloon 400000
+> .amortise 50000 at 5% over 10 into D1     # lay it into the sheet instead
+```
+
+Two details the schedule gets right. Each row's opening balance is the closed
+form for that period rather than the previous row's closing balance, so a
+360-row schedule does not accumulate its own rounding down the page. And the
+final payment absorbs whatever residue is left, so the closing balance is
+exactly `0` (or exactly the balloon) rather than a float a hair away from it —
+which is also what a lender does, since the last instalment on a real loan is a
+different number from the other 359.
+
+Payments at the end of each period only. An annuity due settles interest and
+principal in a different order, so those five columns would quietly mean
+something else; `IPMT`, `PPMT` and `CUMIPMT` take a `type` argument and handle
+it per period.
 
 ## What-if analysis
 
@@ -702,6 +757,8 @@ than a wait.
   cells in it.
 - CSV carries no formats: an export in `display` mode writes what the sheet
   shows, but that text does not read back in as the same numbers.
+- A debt schedule is built for payments at the end of each period; an annuity
+  due is available per period through `IPMT` and `PPMT` but not as a table.
 - Names can only be defined from the library or the shell, not from the grid.
 - Reference highlighting outlines only references written out in the formula.
   A name is underlined in the formula bar and resolved in the inspector, but

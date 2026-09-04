@@ -21,6 +21,8 @@ import {
   writeTwoWayTable,
 } from "./table.js";
 import type { OneWayTable, TwoWayTable } from "./table.js";
+import { ScheduleError, amortisationSchedule, writeSchedule } from "./amortisation.js";
+import type { Schedule } from "./amortisation.js";
 
 /** How the caller wants a line of output decorated. */
 export interface Ink {
@@ -304,4 +306,166 @@ function renderTwoWay(table: TwoWayTable, ink: Ink): string {
   const lines = grid([header, ...body]);
   const [first, ...rest] = lines;
   return [ink.ok(first ?? ""), ...rest].join("\n");
+}
+
+
+// ---------------------------------------------------------------------------
+// `.amortise`
+// ---------------------------------------------------------------------------
+
+const AMORTISE_USAGE =
+  "usage: .amortise 250000 at 5.5%/12 over 360 [balloon 100000] [into D1]";
+
+interface AmortiseCommand {
+  readonly principal: number;
+  readonly rate: number;
+  readonly periods: number;
+  /** What is still owed at the end, as a positive amount. */
+  readonly balloon: number;
+  readonly into?: string | undefined;
+}
+
+/**
+ * `250000 at 5.5%/12 over 360 [balloon 100000] [into D1]`
+ *
+ * The rate is written the way it is quoted — an annual percentage over the
+ * number of payments in a year — because that is how a term sheet states it,
+ * and dividing it by hand before typing is exactly the step people get wrong.
+ */
+export function parseAmortiseCommand(tail: string): AmortiseCommand | string {
+  const text = tail.trim();
+  if (text === "") return AMORTISE_USAGE;
+
+  let rest = text;
+  let into: string | undefined;
+  const intoMatch = /\s+into\s+(\S+)$/i.exec(rest);
+  if (intoMatch !== null) {
+    const target = address(intoMatch[1]!);
+    if (target === null) return `not a cell address: ${intoMatch[1]}`;
+    into = target;
+    rest = rest.slice(0, intoMatch.index);
+  }
+
+  let balloon = 0;
+  const balloonMatch = /\s+balloon\s+(\S+)$/i.exec(rest);
+  if (balloonMatch !== null) {
+    const amount = amount_(balloonMatch[1]!);
+    if (amount === null) return `not an amount: ${balloonMatch[1]}`;
+    balloon = amount;
+    rest = rest.slice(0, balloonMatch.index);
+  }
+
+  const main =
+    /^(\S+)\s+at\s+(\S+?)(?:\s*\/\s*(\S+))?\s+over\s+(\S+)$/i.exec(rest.trim());
+  if (main === null) return AMORTISE_USAGE;
+
+  const principal = amount_(main[1]!);
+  if (principal === null) return `not an amount: ${main[1]}`;
+  const quoted = rate_(main[2]!);
+  if (quoted === null) return `not a rate: ${main[2]}`;
+  let perYear = 1;
+  if (main[3] !== undefined) {
+    const divisor = Number(main[3]);
+    if (!Number.isFinite(divisor) || divisor <= 0) {
+      return `not a number of periods a year: ${main[3]}`;
+    }
+    perYear = divisor;
+  }
+  const periods = Number(main[4]);
+  if (!Number.isInteger(periods) || periods < 1) {
+    return `not a whole number of periods: ${main[4]}`;
+  }
+
+  return { principal, rate: quoted / perYear, periods, balloon, into };
+}
+
+function amount_(text: string): number | null {
+  const cleaned = text.replace(/[_,]/g, "");
+  const value = Number(cleaned);
+  return Number.isFinite(value) ? value : null;
+}
+
+function rate_(text: string): number | null {
+  if (text.endsWith("%")) {
+    const value = Number(text.slice(0, -1));
+    return Number.isFinite(value) ? value / 100 : null;
+  }
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** `.amortise ...` — build a debt schedule and print it, or lay it into the sheet. */
+export function amortiseCommand(
+  book: Workbook,
+  tail: string,
+  ink: Ink = PLAIN,
+): string {
+  const parsed = parseAmortiseCommand(tail);
+  if (typeof parsed === "string") return ink.bad(`  ${parsed}`);
+
+  try {
+    const schedule = amortisationSchedule({
+      rate: parsed.rate,
+      nper: parsed.periods,
+      pv: parsed.principal,
+      fv: -parsed.balloon,
+      type: 0,
+    });
+    if (parsed.into !== undefined) {
+      const { cells } = writeSchedule(book, parsed.into, schedule);
+      return `  ${cells} cell(s) written at ${parsed.into}`;
+    }
+    return renderSchedule(schedule, ink);
+  } catch (error) {
+    if (error instanceof ScheduleError) return ink.bad(`  ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Print a schedule, eliding the middle when it is long.
+ *
+ * A 360-row schedule scrolled past is worse than useless. What a reader checks
+ * is the first rows, the last rows and the totals, so those are what a long
+ * schedule prints, with a count of what was left out.
+ */
+function renderSchedule(schedule: Schedule, ink: Ink): string {
+  const header = [
+    "period",
+    "opening",
+    "payment",
+    "interest",
+    "principal",
+    "closing",
+  ];
+  const row = (period: Schedule["periods"][number]): string[] => [
+    String(period.period),
+    short(period.opening),
+    short(period.payment),
+    short(period.interest),
+    short(period.principal),
+    short(period.closing),
+  ];
+
+  const shown = schedule.periods.length <= 14
+    ? schedule.periods.map(row)
+    : [
+        ...schedule.periods.slice(0, 6).map(row),
+        [`… ${schedule.periods.length - 12} more`, "", "", "", "", ""],
+        ...schedule.periods.slice(-6).map(row),
+      ];
+
+  const totals = [
+    "total",
+    "",
+    short(schedule.totalInterest + schedule.totalPrincipal),
+    short(schedule.totalInterest),
+    short(schedule.totalPrincipal),
+    "",
+  ];
+
+  const lines = grid([header, ...shown, totals]);
+  const [first, ...rest] = lines;
+  const last = rest.pop() ?? "";
+  return [ink.ok(first ?? ""), ...rest, ink.dim(last)].join("\n");
 }

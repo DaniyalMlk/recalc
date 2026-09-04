@@ -16,7 +16,11 @@ import type { Axis, StructuralOperation } from "./engine/structure.js";
 import { registeredFunctionNames, lookupFunction } from "./functions/index.js";
 import { NameError, parseTarget } from "./engine/names.js";
 import { FormatCodeError, isGeneralFormat } from "./format/code.js";
-import { goalSeekCommand, tableCommand } from "./analysis/commands.js";
+import {
+  amortiseCommand,
+  goalSeekCommand,
+  tableCommand,
+} from "./analysis/commands.js";
 import {
   applyScenarioCommand,
   forgetScenarioCommand,
@@ -104,6 +108,14 @@ export const HELP = `
                             cross two inputs against one result
     .table B6 by B1 = 20..40/5 into D1
                             write the table into the sheet
+
+  ${paint(BOLD, "Debt")}
+    .amortise 250000 at 5.5%/12 over 360
+                            a schedule, the rate quoted as it would be
+    .amortise 1000000 at 6%/4 over 20 balloon 400000
+                            with a balance left at the end
+    .amortise 50000 at 5% over 10 into D1
+                            write the schedule into the sheet
 
   ${paint(BOLD, "Scenarios")}
     .scenario Base = B1:B3  capture those cells as they stand
@@ -650,6 +662,10 @@ function handle(
 
   if (line === ".goalseek" || line.startsWith(".goalseek ")) {
     return goalSeekCommand(book, line.slice(9), INK);
+  }
+
+  if (line === ".amortise" || line.startsWith(".amortise ")) {
+    return amortiseCommand(book, line.slice(9), INK);
   }
 
   if (line === ".table" || line.startsWith(".table ")) {
