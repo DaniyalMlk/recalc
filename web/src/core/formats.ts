@@ -11,6 +11,7 @@
  */
 
 import { formatWith } from "../../../src/format/render.js";
+import { serialFromCivil, timeFraction } from "../../../src/date/serial.js";
 import { formatValue, kindOf } from "../../../src/engine/value.js";
 import type { Value } from "../../../src/engine/value.js";
 import type { Command, CommandContext } from "./commands.js";
@@ -23,11 +24,26 @@ export type FormatPresetId =
   | "format-thousands"
   | "format-millions"
   | "format-percent"
-  | "format-scientific";
+  | "format-scientific"
+  | "format-date"
+  | "format-date-long"
+  | "format-month"
+  | "format-timestamp"
+  | "format-duration";
+
+/**
+ * Which half of the menu a preset belongs to.
+ *
+ * Number formats and date formats are not alternatives to each other in any
+ * useful sense — nobody weighs "Currency" against "Month" — so the menu keeps
+ * them apart rather than running thirteen items together.
+ */
+export type FormatPresetGroup = "number" | "date";
 
 export interface FormatPreset {
   readonly id: FormatPresetId;
   readonly label: string;
+  readonly group: FormatPresetGroup;
   /** The code applied. Empty means back to the general format. */
   readonly code: string;
   /**
@@ -41,34 +57,100 @@ export interface FormatPreset {
   readonly standIn: number;
 }
 
+/** A stand-in date: a Wednesday afternoon, so every field has something to show. */
+const SAMPLE_MOMENT = serialFromCivil(2026, 3, 4) + timeFraction(13, 45, 0);
+
 export const FORMAT_PRESETS: readonly FormatPreset[] = [
-  { id: "format-general", label: "General", code: "", standIn: 1234.5 },
-  { id: "format-number", label: "Number", code: "#,##0.00", standIn: 1234.5 },
-  { id: "format-integer", label: "Whole number", code: "#,##0", standIn: 1234.5 },
+  {
+    id: "format-general",
+    label: "General",
+    group: "number",
+    code: "",
+    standIn: 1234.5,
+  },
+  {
+    id: "format-number",
+    label: "Number",
+    group: "number",
+    code: "#,##0.00",
+    standIn: 1234.5,
+  },
+  {
+    id: "format-integer",
+    label: "Whole number",
+    group: "number",
+    code: "#,##0",
+    standIn: 1234.5,
+  },
   {
     id: "format-currency",
     label: "Currency",
+    group: "number",
     code: "$#,##0.00;[Red]($#,##0.00)",
     standIn: 1234.5,
   },
   {
     id: "format-thousands",
     label: "Thousands",
+    group: "number",
     code: '#,##0.0,"k"',
     standIn: 1500,
   },
   {
     id: "format-millions",
     label: "Millions",
+    group: "number",
     code: '#,##0.0,,"M"',
     standIn: 2400000,
   },
-  { id: "format-percent", label: "Percent", code: "0.0%", standIn: 0.125 },
+  {
+    id: "format-percent",
+    label: "Percent",
+    group: "number",
+    code: "0.0%",
+    standIn: 0.125,
+  },
   {
     id: "format-scientific",
     label: "Scientific",
+    group: "number",
     code: "0.00E+00",
     standIn: 1234.5,
+  },
+  {
+    id: "format-date",
+    label: "Date",
+    group: "date",
+    code: "yyyy-mm-dd",
+    standIn: SAMPLE_MOMENT,
+  },
+  {
+    id: "format-date-long",
+    label: "Date, long",
+    group: "date",
+    code: "d mmm yyyy",
+    standIn: SAMPLE_MOMENT,
+  },
+  {
+    id: "format-month",
+    label: "Month",
+    group: "date",
+    code: "mmm-yy",
+    standIn: SAMPLE_MOMENT,
+  },
+  {
+    id: "format-timestamp",
+    label: "Date and time",
+    group: "date",
+    code: "yyyy-mm-dd hh:mm",
+    standIn: SAMPLE_MOMENT,
+  },
+  {
+    id: "format-duration",
+    label: "Duration",
+    group: "date",
+    code: "[h]:mm",
+    standIn: 1.5,
   },
 ];
 
@@ -149,4 +231,22 @@ export function formatCommands(
     hint: previewFormat(preset, value),
     checked: current !== "mixed" && (current ?? "") === preset.code,
   }));
+}
+
+/** The same commands, split into the groups the menu draws a rule between. */
+export function formatCommandGroups(
+  context: CommandContext,
+  current: SelectionFormat,
+  value: Value = null,
+): Command[][] {
+  const commands = formatCommands(context, current, value);
+  const byId = new Map(commands.map((command) => [command.id, command]));
+  const groups: Command[][] = [];
+  for (const group of ["number", "date"] as const) {
+    const members = FORMAT_PRESETS.filter((preset) => preset.group === group)
+      .map((preset) => byId.get(preset.id))
+      .filter((command): command is Command => command !== undefined);
+    if (members.length > 0) groups.push(members);
+  }
+  return groups;
 }

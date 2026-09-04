@@ -524,8 +524,21 @@ describe("number formats", () => {
 
   it("reports a malformed code with its position", () => {
     const out = one(".format A1 = 0yyyy", ["A1 = 1"]);
-    expect(out).toContain("date and time");
+    expect(out).toContain("mixes date fields");
     expect(out).toContain("(at 1)");
+  });
+
+  it("applies a date code and shows the cell as a date", () => {
+    const out = one(".format A1 = yyyy-mm-dd", ["A1 = =DATE(2026,3,4)"]);
+    expect(out).toContain("yyyy-mm-dd");
+    expect(one("A1", ["A1 = =DATE(2026,3,4)", ".format A1 = yyyy-mm-dd"])).toContain(
+      "2026-03-04",
+    );
+  });
+
+  it("applies an elapsed code to a duration", () => {
+    const shown = one("A1", ["A1 = 1.5", ".format A1 = [h]:mm"]);
+    expect(shown).toContain("36:00");
   });
 
   it("clears a format back to General", () => {

@@ -16,8 +16,9 @@ formula depends on, and recalculates only what an edit actually invalidated.
 ## Status
 
 Every phase in [ROADMAP.md](ROADMAP.md) is complete: the formula grammar, the
-reference model, the dependency graph, the evaluator, a function library of 98
-functions including a financial pack, CSV interchange, named ranges, a
+reference model, the dependency graph, the evaluator, a function library of 118
+functions including financial and date packs, day-count conventions, CSV
+interchange, named ranges, a
 benchmark harness, structural editing that rewrites every formula in the sheet
 when rows and columns move, block editing with fill, clipboard and undo, number
 formats that follow their cells through every one of those operations, what-if
@@ -79,6 +80,66 @@ sheet.undoLabel;                         // "paste"
 sheet.undo();                            // all three pasted cells, in one step
 ```
 
+## Dates and day-count conventions
+
+A date is a number: whole days from an epoch, with the fractional part carrying
+the time. That is the whole model, and everything else — arithmetic, day counts,
+date formats — is ordinary numeric work on top of it.
+
+```ts
+book.setCells({
+  B1: "=DATE(2026, 3, 4)",           // 46085
+  B2: "=EOMONTH(B1, 0)",             // the last day of March
+  B3: "=EDATE(B1, 18)",              // eighteen months on
+  B4: "=WORKDAY(B1, 10, Holidays)",  // ten working days, a holiday list out
+  B5: "=YEARFRAC(B1, B3, 0)",        // 1.5 exactly, on 30/360
+});
+```
+
+The serial system is the 1900 one every other spreadsheet uses, phantom leap day
+and all: serial 60 is 29 February 1900, a day that never happened. Reproducing
+it is a deliberate choice — a serial is an interchange value, and correcting the
+bug would put this engine one day out from every other for two months of 1900
+while agreeing everywhere else. Reproducing it properly means going all the way,
+so the system behaves as if that calendar were real and a difference of dates is
+a difference of serials, with no correction anywhere.
+
+`YEARFRAC` is where the conventions live. The same two dates give five different
+answers, and which one is right is a matter of what was agreed, not of what is
+true:
+
+| basis | convention | 1 Jan 2012 → 30 Jul 2012 |
+| --- | --- | --- |
+| 0 | 30/360 US (NASD) | 0.58055556 |
+| 1 | actual/actual | 0.57650273 |
+| 2 | actual/360 | 0.58611111 |
+| 3 | actual/365 | 0.57808219 |
+| 4 | 30/360 European | 0.58055556 |
+
+The 30/360 family is the fiddly part, and the fiddliness is all at month ends.
+Both variants slide the day numbers onto a 360-day grid before subtracting;
+they disagree about what a 31st becomes, and `YEARFRAC` basis 0 additionally
+treats a February month end as a 30th while `DAYS360` never has. That last
+difference is why 28 February to 31 August is 183 days through `DAYS360` and a
+clean 180 through `YEARFRAC` — one is a day count, the other is half a coupon.
+Both behaviours come out of one function with a flag, and the published
+comparison table is in the test suite as a table-driven case.
+
+`XNPV` and `XIRR` discount on actual/365 through the same module rather than
+subtracting serials themselves, so a dated schedule and a `YEARFRAC` on the same
+two dates cannot disagree.
+
+`TODAY` and `NOW` read a clock the host can replace:
+
+```ts
+import { setClock } from "recalc";
+
+setClock({ now: () => Date.UTC(2026, 2, 4) });   // evaluate "as at" a date
+```
+
+Dates are formatted, not typed. A cell holding 46085 shows as a date because it
+is wearing `yyyy-mm-dd`, which is the next section.
+
 ## Number formats
 
 A format code is compiled once into digit positions, literals and up to four
@@ -130,9 +191,31 @@ produces and what a cell displays cannot drift apart:
 
 Supported: digit placeholders `0` `#` `?`, a decimal point, grouping and
 thousands-scaling commas, `%`, quoted literals, `\` escapes, `_` width skips,
-`*` fills, `@` for text, `[Red]`-style colours, and `E+00` scientific codes.
-Date and fraction codes are rejected with the offset of the offending
-character rather than silently mis-formatted.
+`*` fills, `@` for text, `[Red]`-style colours, `E+00` scientific codes, and the
+date and time codes below. Fraction codes (`# ?/?`) are rejected with the offset
+of the offending character rather than silently mis-formatted.
+
+### Date and time codes
+
+A section that contains a calendar field lays out a date instead of digits, and
+the two never mix — `0yyyy` is refused, with the offset of the `y`.
+
+```ts
+formatWith("yyyy-mm-dd", 46081).text;            // "2026-02-28"
+formatWith("dddd, d mmmm yyyy", 46081).text;     // "Saturday, 28 February 2026"
+formatWith("mmm-yy", 46081).text;                // "Feb-26"
+formatWith("h:mm AM/PM", 46081.5729).text;       // "1:44 PM"
+formatWith("[h]:mm", 1.5).text;                  // "36:00" - not "12:00"
+```
+
+`y` `m` `d` `h` `s` widen with repetition: `m` is a bare month, `mm` pads it,
+`mmm` and `mmmm` name it, `mmmmm` gives its initial; `ddd` and `dddd` name the
+weekday. `m` is the one ambiguous code — it means minute next to an hour or a
+second and a month everywhere else, which is decided after the whole section has
+been read, because in `m:ss` only the `ss` says so. `AM/PM` (or `A/P`) puts the
+hour on a 12-hour clock. The bracketed codes `[h]`, `[m]` and `[s]` are
+durations: they accumulate rather than wrap, which is what makes a day and a
+half print as `36:00`.
 
 ## What-if analysis
 
@@ -607,8 +690,13 @@ than a wait.
 - Only one sheet; there are no cross-sheet references.
 - Scenarios are not serialised: they live for the length of a session, and CSV
   has nowhere to put them.
-- Date and fraction format codes are rejected rather than supported: the value
-  model has no date serial type, so `yyyy-mm-dd` would have nothing to format.
+- Fraction format codes (`# ?/?`) are rejected rather than supported: the
+  rational approximation they need has nothing to do with the digit machinery
+  the rest of the compiler is built from.
+- Sub-second format codes (`ss.00`) are not supported, and neither is ISO week
+  numbering — `WEEKNUM` counts the week holding 1 January as week 1.
+- A date is recognised by the format on its cell, not by what was typed: an
+  entered `2026-03-04` is text until `DATEVALUE` turns it into a serial.
 - A format belongs to a cell, not to a row, a column or the sheet, so
   formatting a whole column means selecting it and applying the format to the
   cells in it.

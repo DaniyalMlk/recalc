@@ -65,10 +65,12 @@ export const HELP = `
     .reset                  start an empty sheet
     .quit
 
-  ${paint(BOLD, "Number formats")}
+  ${paint(BOLD, "Formats")}
     .format B2:B13 = #,##0.00   apply a format code to a cell or block
     .format B2                  show the code on a cell
     .format B2 = General        back to the general format
+    .format B2 = yyyy-mm-dd     dates: yyyy mm mmm mmmm dd ddd dddd
+    .format B2 = [h]:mm         durations, hours past a day included
     .formats                    every cell carrying a format
 
   ${paint(BOLD, "Names")}

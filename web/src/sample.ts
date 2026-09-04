@@ -22,6 +22,7 @@ export const SAMPLE_SHEET: Record<string, string> = {
   E6: "Tax",
   F6: "Capex",
   G6: "Free cash flow",
+  H6: "Period end",
 
   A7: "0",
   B7: "0",
@@ -69,6 +70,12 @@ export const SAMPLE_SHEET: Record<string, string> = {
   B18: "=MIN(CashFlow)",
   A19: "Payback achieved",
   B19: '=IF(B17>0,"yes","no")',
+  A20: "IRR on actual dates",
+  // Period ends are 365 or 366 days apart rather than exactly a year, so this
+  // and B16 disagree in the third decimal. Both are shown to three places so
+  // the difference is visible rather than rounded away, which is the whole
+  // reason for carrying an XIRR beside an IRR.
+  B20: "=XIRR(CashFlow,PeriodEnd)",
 };
 
 /**
@@ -82,6 +89,7 @@ export const SAMPLE_NAMES: Record<string, string> = {
   DiscountRate: "B3",
   TaxRate: "B4",
   CashFlow: "G7:G13",
+  PeriodEnd: "H7:H13",
 };
 
 /** Formula columns, filled down over the seven project years. */
@@ -91,6 +99,9 @@ export function sampleFormulas(): Record<string, string> {
     cells[`D${row}`] = `=B${row}-C${row}`;
     cells[`E${row}`] = `=MAX(0,D${row}*TaxRate)`;
     cells[`G${row}`] = `=D${row}-E${row}-F${row}`;
+    // Year 0 closes the books at the end of 2025; each year after is twelve
+    // months on, which EOMONTH keeps on a month end without any day arithmetic.
+    cells[`H${row}`] = `=EOMONTH(DATE(2025,12,31),A${row}*12)`;
   }
   return cells;
 }
@@ -108,8 +119,10 @@ export const SAMPLE_FORMATS: Record<string, string> = {
   "B7:G13": "#,##0;[Red](#,##0)",
   "A7:A13": "0",
   "B15": "$#,##0;[Red]($#,##0)",
-  "B16": "0.00%",
+  "B16": "0.000%",
   "B17:B18": "$#,##0;[Red]($#,##0)",
+  "B20": "0.000%",
+  "H7:H13": "yyyy-mm-dd",
 };
 
 /** Column widths the example reads best at, by column index. */
@@ -121,4 +134,5 @@ export const SAMPLE_WIDTHS: Record<number, number> = {
   4: 112,
   5: 112,
   6: 132,
+  7: 118,
 };

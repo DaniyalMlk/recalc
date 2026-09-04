@@ -9,6 +9,7 @@ import {
 } from "./registry.js";
 import type { Arg } from "./registry.js";
 import { solveRate } from "./solver.js";
+import { yearFraction } from "../date/daycount.js";
 
 function guard(n: number): Value {
   return Number.isFinite(n) ? n : NUM_ERROR;
@@ -290,7 +291,15 @@ defineFunction({
   },
 });
 
-/** Day-count discounting for irregular dates, on a 365-day year. */
+/**
+ * Discounting for irregular dates.
+ *
+ * The exponent is a year fraction on the actual/365 basis, which is the
+ * convention `XNPV` and `XIRR` are defined on. It comes from the shared
+ * day-count module rather than a bare subtraction of serials, so the two
+ * months around the 1900 phantom leap day discount by the number of days that
+ * actually elapsed rather than the number the serials suggest.
+ */
 function irregularPresentValue(
   rate: number,
   flows: readonly number[],
@@ -299,7 +308,7 @@ function irregularPresentValue(
   const start = dates[0]!;
   let total = 0;
   for (let i = 0; i < flows.length; i++) {
-    total += flows[i]! / Math.pow(1 + rate, (dates[i]! - start) / 365);
+    total += flows[i]! / Math.pow(1 + rate, yearFraction(start, dates[i]!, 3));
   }
   return total;
 }
@@ -469,54 +478,5 @@ defineFunction({
     const n = Math.trunc(periods);
     if (effective <= 0 || n < 1) return NUM_ERROR;
     return guard((Math.pow(1 + effective, 1 / n) - 1) * n);
-  },
-});
-
-/**
- * Date serial numbers, counted from 1899-12-30 so that they line up with the
- * usual spreadsheet epoch for every date from 1900-03-01 onward. Only
- * differences matter to `XNPV` and `XIRR`, so the well-known 1900 leap-year
- * discrepancy before that date does not affect any result here.
- */
-const EPOCH = Date.UTC(1899, 11, 30);
-
-export function dateToSerial(year: number, month: number, day: number): number {
-  return Math.round((Date.UTC(year, month - 1, day) - EPOCH) / 86400000);
-}
-
-defineFunction({
-  name: "DATE",
-  description: "Date serial number from year, month and day.",
-  minArgs: 3,
-  maxArgs: 3,
-  call(args) {
-    const year = numberArg(args[0]);
-    if (isFormulaError(year)) return year;
-    const month = numberArg(args[1]);
-    if (isFormulaError(month)) return month;
-    const day = numberArg(args[2]);
-    if (isFormulaError(day)) return day;
-    return guard(
-      dateToSerial(Math.trunc(year), Math.trunc(month), Math.trunc(day)),
-    );
-  },
-});
-
-defineFunction({
-  name: "DATEVALUE",
-  description: "Date serial number from an ISO date string.",
-  minArgs: 1,
-  maxArgs: 1,
-  call(args) {
-    const values = argValues(args[0]!);
-    const text = values[0];
-    if (typeof text !== "string") return VALUE_ERROR;
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text.trim());
-    if (match === null) return VALUE_ERROR;
-    return dateToSerial(
-      Number(match[1]),
-      Number(match[2]),
-      Number(match[3]),
-    );
   },
 });
