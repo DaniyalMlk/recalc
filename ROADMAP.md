@@ -127,3 +127,14 @@ tree green and the public API usable.
 - [x] Scenarios captured from the selection, applied, and summarised side by side
 - [x] Scenarios moved with the sheet by structural edits made from the grid
 - [x] Panel view logic separated from the DOM and tested that way
+
+## Phase 16 — Dates and day-count conventions
+
+- [x] Serial date core on the 1900 system, phantom leap day included, with civil conversion both ways
+- [x] Component and arithmetic functions: `YEAR` … `SECOND`, `WEEKDAY`, `WEEKNUM`, `EDATE`, `EOMONTH`, `DAYS`, `DAYS360`, `DATEDIF`
+- [x] The five day-count bases behind `YEARFRAC`, validated against the published 30/360 table
+- [x] `XNPV` and `XIRR` discounting through the shared day-count module
+- [x] Working-day functions with a holiday list: `NETWORKDAYS`, `WORKDAY`
+- [x] `TODAY` and `NOW` on a clock the host can replace
+- [x] Date, time and elapsed codes in the format compiler and renderer
+- [x] Date and duration presets in the grid's format menu and the shell's help
