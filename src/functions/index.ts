@@ -6,7 +6,9 @@ import "./text.js";
 import "./lookup.js";
 import "./info.js";
 import "./financial.js";
+import "./date.js";
 
 export * from "./registry.js";
 export { solveRate } from "./solver.js";
-export { dateToSerial } from "./financial.js";
+export { setClock } from "./date.js";
+export type { Clock } from "./date.js";

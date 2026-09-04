@@ -12,9 +12,15 @@
  * for file compatibility. This engine reproduces it rather than quietly
  * correcting it, because a serial is an interchange value — a workbook that
  * corrected the phantom day would disagree by one with every other spreadsheet
- * for the two months where the bug is visible, and agree everywhere it is not.
- * The bug is therefore confined to `[1, 60]`; from 1900-03-01 (serial 61)
- * onward a serial is simply the count of days since 1899-12-30.
+ * for the two months where the bug is visible.
+ *
+ * Reproducing it properly means going all the way: the system behaves as if a
+ * calendar containing 29 February 1900 were real. Serials and that calendar are
+ * in bijection, so the difference between two dates is the difference between
+ * their serials, always, with no correction anywhere. The cost is paid once, at
+ * the boundary — 1900-01-01 reports as a Sunday when it was in fact a Monday,
+ * because the weekday cycle is anchored so that every date after 1900-02-28,
+ * which is to say every date anyone models, comes out right.
  */
 
 /** 1899-12-30, the anchor that makes serial 61 fall on 1900-03-01. */
@@ -129,24 +135,14 @@ export function civilFromSerial(serial: number): CivilDate {
 }
 
 /**
- * A serial's position on a continuous day count.
+ * Days between two serials.
  *
- * Day-count conventions need the number of days between two dates, and across
- * the phantom leap day the serials themselves are one apart while the calendar
- * is not. Converting to this index first removes the discontinuity, so callers
- * can subtract two of them and get the true elapsed days.
+ * Plain subtraction, which is the whole point of a serial system: the calendar
+ * the serials describe includes the phantom day, so no correction is owed and
+ * every day-count in the engine can be a difference of two numbers.
  */
-export function dayIndexOfSerial(serial: number): number {
-  const whole = Math.floor(serial);
-  if (whole > PHANTOM_LEAP_SERIAL) return whole;
-  // 1900-02-29 shares its day with 1900-03-01's predecessor; both collapse
-  // onto the real 1900-02-28 → 1900-03-01 boundary.
-  return whole === PHANTOM_LEAP_SERIAL ? whole : whole + 1;
-}
-
-/** Elapsed calendar days between two serials, phantom day discounted. */
 export function daysBetween(from: number, to: number): number {
-  return dayIndexOfSerial(to) - dayIndexOfSerial(from);
+  return Math.floor(to) - Math.floor(from);
 }
 
 /** True when a serial addresses a date the 1900 system can represent. */
@@ -157,13 +153,14 @@ export function isValidSerial(serial: number): boolean {
 /**
  * Day of the week for a serial, 0 = Sunday.
  *
- * 1900-01-01 (serial 1) was a Monday in the real calendar and spreadsheets
- * agree, because the phantom day has not yet been passed at that point.
+ * The cycle runs on the serial itself, so it inherits the phantom day: serial 1
+ * reports as a Sunday even though 1900-01-01 was a Monday. Anchoring it the
+ * other way would make that one date right and shift every date after
+ * 1900-02-28 wrong by one, which is the wrong trade by about a century.
  */
 export function weekdayIndex(serial: number): number {
-  const index = dayIndexOfSerial(serial);
-  // Day index 2 is 1900-01-01, a Monday, so index ≡ 1 (mod 7) is Sunday.
-  return ((index % 7) + 7 + 6) % 7;
+  // Serial 1 ≡ Sunday under this anchor, which puts 2026-01-01 on a Thursday.
+  return ((Math.floor(serial) % 7) + 7 + 6) % 7;
 }
 
 const SECONDS_PER_DAY = 86400;
@@ -221,6 +218,7 @@ export function addMonths(serial: number, months: number): number {
 
 /** True when a serial sits on the final day of its month. */
 export function isMonthEnd(serial: number): boolean {
+  if (Math.floor(serial) === PHANTOM_LEAP_SERIAL) return true;
   const { year, month, day } = civilFromSerial(serial);
   return day === daysInMonth(year, month);
 }
