@@ -27,7 +27,10 @@ import { defineFunction, numberArg } from "./registry.js";
 import type { Arg } from "./registry.js";
 
 function guard(n: number): Value {
-  return Number.isFinite(n) ? n : NUM_ERROR;
+  if (!Number.isFinite(n)) return NUM_ERROR;
+  // A zero-rate loan charges `-balance * 0`, which is a true −0 and a bad thing
+  // to hand to a sheet: it prints as `0` but divides as if it were signed.
+  return n === 0 ? 0 : n;
 }
 
 function optional(

@@ -82,6 +82,11 @@ export interface Schedule {
  * column of negative opening balances beside negative payments is a column
  * nobody can scan.
  */
+/** −0 is a true answer here and a bad one to print, so it is normalised away. */
+function unsignZero(n: number): number {
+  return n === 0 ? 0 : n;
+}
+
 export function amortisationSchedule(terms: LoanTerms): Schedule {
   const count = Math.trunc(terms.nper);
   if (!Number.isFinite(terms.rate) || !Number.isFinite(terms.pv)) {
@@ -116,15 +121,15 @@ export function amortisationSchedule(terms: LoanTerms): Schedule {
     if (isLast) {
       // Clear whatever the closed form left behind, and let the payment move
       // rather than the balance: the balance is the thing a reader checks.
-      principal = -(opening + settled.fv);
-      closing = -settled.fv;
+      principal = unsignZero(-(opening + settled.fv));
+      closing = unsignZero(-settled.fv);
     }
 
     periods.push({
       period,
-      opening,
-      payment: isLast ? interest + principal : payment,
-      interest,
+      opening: unsignZero(opening),
+      payment: unsignZero(isLast ? interest + principal : payment),
+      interest: unsignZero(interest),
       principal,
       closing,
     });
