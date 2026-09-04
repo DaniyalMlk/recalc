@@ -3,6 +3,7 @@ import { err } from "../src/engine/errors.js";
 import {
   FORMAT_PRESETS,
   describeFormat,
+  formatCommandGroups,
   formatCommands,
   formatPreset,
   isFormatPresetId,
@@ -112,6 +113,18 @@ describe("previews", () => {
     }
   });
 
+  it("previews the date presets on a moment with every field set", () => {
+    expect(previewFormat(formatPreset("format-date"), null)).toBe("2026-03-04");
+    expect(previewFormat(formatPreset("format-date-long"), null)).toBe(
+      "4 Mar 2026",
+    );
+    expect(previewFormat(formatPreset("format-month"), null)).toBe("Mar-26");
+    expect(previewFormat(formatPreset("format-timestamp"), null)).toBe(
+      "2026-03-04 13:45",
+    );
+    expect(previewFormat(formatPreset("format-duration"), null)).toBe("36:00");
+  });
+
   it("give each preset a stand-in that demonstrates it", () => {
     // A single shared stand-in would show percent as `123450.0%`.
     expect(previewFormat(formatPreset("format-percent"), null)).toBe("12.5%");
@@ -155,5 +168,34 @@ describe("the format menu", () => {
     const commands = formatCommands(context, null, 2400000);
     const millions = commands.find((c) => c.id === "format-millions");
     expect(millions?.hint).toBe("2.4M");
+  });
+
+  it("ticks a date preset the selection is wearing", () => {
+    const checked = formatCommands(context, "yyyy-mm-dd").filter(
+      (command) => command.checked,
+    );
+    expect(checked).toHaveLength(1);
+    expect(checked[0]!.id).toBe("format-date");
+  });
+
+  it("splits the menu into number and date groups", () => {
+    const groups = formatCommandGroups(context, null);
+    expect(groups).toHaveLength(2);
+    expect(groups.flat().map((command) => command.id)).toEqual(
+      formatCommands(context, null).map((command) => command.id),
+    );
+    expect(groups[1]!.map((command) => command.id)).toEqual([
+      "format-date",
+      "format-date-long",
+      "format-month",
+      "format-timestamp",
+      "format-duration",
+    ]);
+  });
+
+  it("keeps the tick in whichever group holds it", () => {
+    const groups = formatCommandGroups(context, "mmm-yy");
+    expect(groups[0]!.some((command) => command.checked)).toBe(false);
+    expect(groups[1]!.filter((command) => command.checked)).toHaveLength(1);
   });
 });

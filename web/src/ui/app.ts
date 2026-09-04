@@ -22,6 +22,7 @@ import type { Command, CommandContext, CommandId } from "../core/commands.js";
 import {
   describeFormat,
   formatCommands,
+  formatCommandGroups,
   formatPreset,
   isFormatPresetId,
   selectionFormat,
@@ -738,13 +739,11 @@ export class App {
     this.commitEdit();
     const box = this.el.formatButton.getBoundingClientRect();
     this.menu.show(
-      [
-        formatCommands(
-          this.commandContext(),
-          this.currentFormat(),
-          this.activeValue(),
-        ),
-      ],
+      formatCommandGroups(
+        this.commandContext(),
+        this.currentFormat(),
+        this.activeValue(),
+      ),
       box.left,
       box.bottom + 4,
     );
