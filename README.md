@@ -16,8 +16,8 @@ formula depends on, and recalculates only what an edit actually invalidated.
 ## Status
 
 Every phase in [ROADMAP.md](ROADMAP.md) is complete: the formula grammar, the
-reference model, the dependency graph, the evaluator, a function library of 123
-functions including financial, date and amortisation packs, day-count
+reference model, the dependency graph, the evaluator, a function library of 135
+functions including financial, date, amortisation and bond packs, day-count
 conventions, debt schedules, CSV interchange, named ranges, a
 benchmark harness, structural editing that rewrites every formula in the sheet
 when rows and columns move, block editing with fill, clipboard and undo, number
@@ -271,6 +271,50 @@ Payments at the end of each period only. An annuity due settles interest and
 principal in a different order, so those five columns would quietly mean
 something else; `IPMT`, `PPMT` and `CUMIPMT` take a `type` argument and handle
 it per period.
+
+## Bonds
+
+A bond is a schedule of coupons and a redemption, and its price is what those
+are worth today. That would be a dull discounted cash flow except for one
+thing: a bond is almost never bought on a coupon date. Settling between two
+coupons makes the first discount period a fraction, and the seller is owed the
+interest that accrued while they held it.
+
+```
+=PRICE(DATE(2008,2,15), DATE(2017,11,15), 0.0575, 0.065, 100, 2, 0)   →  94.634362
+=YIELD(DATE(2008,2,15), DATE(2016,11,15), 0.0575, 95.04287, 100, 2, 0) →   0.065
+=DURATION(DATE(2008,1,1), DATE(2016,1,1), 0.08, 0.09, 2, 1)            →   5.993775
+=MDURATION(DATE(2008,1,1), DATE(2016,1,1), 0.08, 0.09, 2, 1)           →   5.735670
+=ACCRINT(DATE(2008,3,1), DATE(2008,8,31), DATE(2008,5,1), 0.1, 1000, 2, 0) → 16.666667
+```
+
+Where settlement sits inside its coupon period is the whole problem, and the
+coupon family answers it: `COUPPCD` and `COUPNCD` for the dates either side,
+`COUPNUM` for how many coupons are left, and `COUPDAYBS`, `COUPDAYS`,
+`COUPDAYSNC` for the position within the period on a chosen basis.
+
+Three things the implementation is careful about.
+
+**Coupon dates are generated backwards from maturity.** Counting forwards from
+issue leaves the last period a stub, and a bond's last period is the one that is
+never a stub — the final coupon is paid with the principal, on the day the bond
+matures. Each date is derived from maturity directly rather than stepped from
+the one before it, so a bond maturing on the 31st still pays on the 31st of
+every long month instead of walking itself off month ends one February at a
+time.
+
+**`COUPDAYSNC` is derived, not measured.** The price formula divides both ends
+by the period length and treats the results as a position in `[0, 1]`. Measuring
+each end independently on a 30/360 basis lets that pair miss 1 by a day, and the
+discount exponent then steps in a way nothing in the bond did. Subtracting makes
+`COUPDAYBS + COUPDAYSNC = COUPDAYS` exact.
+
+**The last coupon period prices differently.** With more than one coupon left,
+each flow is discounted at the compounded periodic yield. With exactly one left
+the market does not compound over a period it will not see: the single remaining
+payment is discounted at simple interest, which is the convention every last
+coupon period is quoted on. The two rules agree at the boundary, which is a
+test.
 
 ## What-if analysis
 
@@ -759,6 +803,12 @@ than a wait.
   shows, but that text does not read back in as the same numbers.
 - A debt schedule is built for payments at the end of each period; an annuity
   due is available per period through `IPMT` and `PPMT` but not as a table.
+- Bond coupon schedules follow the day of the month maturity falls on, with no
+  end-of-month rule: a bond maturing on 28 February pays on the 28th, not on
+  the month end, of every other period.
+- `ACCRINT` accrues from issue to settlement as one span rather than summing
+  quasi-coupon periods. The two agree on the 30/360 bases and can differ by a
+  day's interest on the actual ones.
 - Names can only be defined from the library or the shell, not from the grid.
 - Reference highlighting outlines only references written out in the formula.
   A name is underlined in the formula bar and resolved in the inspector, but
