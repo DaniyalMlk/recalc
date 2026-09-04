@@ -39,16 +39,16 @@ import type { Arg } from "./registry.js";
 // ---------------------------------------------------------------------------
 
 /** A serial from an argument, rejecting anything outside the 1900 system. */
-export function serialArg(arg: Arg | undefined): number | Value {
+export function serialArg(arg: Arg | undefined): number | FormulaError {
   const n = numberArg(arg);
   if (isFormulaError(n)) return n;
   if (!isValidSerial(n)) return NUM_ERROR;
   return n;
 }
 
-function wholeSerialArg(arg: Arg | undefined): number | Value {
+function wholeSerialArg(arg: Arg | undefined): number | FormulaError {
   const n = serialArg(arg);
-  return typeof n === "number" ? Math.floor(n) : n;
+  return isFormulaError(n) ? n : Math.floor(n);
 }
 
 function basisArg(
@@ -63,8 +63,8 @@ function basisArg(
   return basis;
 }
 
-function isSerial(value: number | Value): value is number {
-  return typeof value === "number";
+function isSerial(value: number | FormulaError): value is number {
+  return !isFormulaError(value);
 }
 
 // ---------------------------------------------------------------------------

@@ -147,3 +147,12 @@ tree green and the public API usable.
 - [x] A schedule builder whose closing balance lands exactly on zero, or on a balloon
 - [x] `.amortise` in the shell, reading a rate the way a term sheet quotes it
 - [x] The schedule laid into the sheet as well as printed
+
+## Phase 18 — Bond analytics
+
+- [x] Coupon schedules generated backwards from maturity, each date derived from maturity rather than stepped
+- [x] `COUPPCD`, `COUPNCD`, `COUPNUM`, `COUPDAYBS`, `COUPDAYS`, `COUPDAYSNC`, with the period split exactly
+- [x] `PRICE` and `YIELD`, inverses of each other, with the separate rule for the final coupon period
+- [x] `ACCRINT` and `ACCRINTM`
+- [x] `DURATION` and `MDURATION`, checked against the price move they predict
+- [x] Every published worked example reproduced in the test suite

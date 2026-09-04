@@ -8,6 +8,7 @@ import "./info.js";
 import "./financial.js";
 import "./date.js";
 import "./amortisation.js";
+import "./bonds.js";
 
 export * from "./registry.js";
 export { solveRate } from "./solver.js";
