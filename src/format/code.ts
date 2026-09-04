@@ -8,11 +8,14 @@
  * format is re-applied on every repaint, and re-parsing per repaint would put
  * a string scan on the render path.
  *
- * Deliberately absent: date and fraction codes. Dates need a serial-number
- * value type this engine does not have, and `# ?/?` needs a rational
- * approximation that has nothing to do with the digit machinery here. Both are
- * rejected at parse time with a position, which is a better answer than
- * silently formatting a date code as a plain number.
+ * Date and time codes live here too, but as a separate kind of section: a
+ * section that contains any of them lays out calendar fields rather than digit
+ * positions, and the two never mix. That split is what keeps `m` from having
+ * to mean "month" and "a digit place" at once.
+ *
+ * Deliberately absent: fraction codes. `# ?/?` needs a rational approximation
+ * that has nothing to do with the digit machinery here, and is rejected at
+ * parse time with a position rather than silently mis-formatted.
  */
 
 /** Where a parse gave up, so a caller can point at the offending character. */
@@ -66,7 +69,32 @@ export type FormatToken =
   /** `@` — the whole incoming text, in a text section. */
   | { readonly kind: "text" }
   /** The exponent marker of a scientific code, with its sign rule. */
-  | { readonly kind: "exponent"; readonly signAlways: boolean };
+  | { readonly kind: "exponent"; readonly signAlways: boolean }
+  /** A calendar or clock field, `width` being how many letters were written. */
+  | {
+      readonly kind: "datetime";
+      readonly field: DateTimeField;
+      readonly width: number;
+    };
+
+/**
+ * The fields a date section can lay out.
+ *
+ * `elapsedHour` and friends are the bracketed codes `[h]`, `[m]`, `[s]`: they
+ * do not wrap at a day, an hour or a minute, which is what makes a duration
+ * of 30 hours print as `30:00` instead of `06:00`.
+ */
+export type DateTimeField =
+  | "year"
+  | "month"
+  | "day"
+  | "hour"
+  | "minute"
+  | "second"
+  | "meridiem"
+  | "elapsedHour"
+  | "elapsedMinute"
+  | "elapsedSecond";
 
 /** One `;`-delimited branch of a format code. */
 export interface FormatSection {
@@ -90,6 +118,10 @@ export interface FormatSection {
   readonly hasTextPlaceholder: boolean;
   /** True when the section contains no digit positions and no `@`. */
   readonly literalOnly: boolean;
+  /** True when the section lays out calendar fields rather than digits. */
+  readonly dateTime: boolean;
+  /** True when an `AM/PM` marker puts the hour field on a 12-hour clock. */
+  readonly clock12: boolean;
 }
 
 /**
@@ -141,6 +173,21 @@ const PASS_THROUGH = new Set([
 ]);
 
 const DATE_CHARS = new Set(["y", "m", "d", "h", "s", "Y", "M", "D", "H", "S"]);
+
+/** What a letter means before the `m` ambiguity is resolved. */
+const RAW_DATE_FIELDS: Readonly<Record<string, DateTimeField>> = {
+  y: "year",
+  m: "month",
+  d: "day",
+  h: "hour",
+  s: "second",
+};
+
+const ELAPSED_FIELDS: Readonly<Record<string, DateTimeField>> = {
+  h: "elapsedHour",
+  m: "elapsedMinute",
+  s: "elapsedSecond",
+};
 
 /**
  * Compile a format code.
@@ -215,6 +262,9 @@ function parseSection(
   let seenPoint = false;
   let seenExponent = false;
   let hasText = false;
+  let sawDateField = false;
+  let firstDateFieldAt = -1;
+  let clock12 = false;
 
   /**
    * A comma's meaning depends on what comes after it: between digit positions
@@ -330,6 +380,14 @@ function parseSection(
           throw new FormatCodeError("unterminated `[` modifier", i);
         }
         const body = source.slice(i + 1, close).trim().toLowerCase();
+        const elapsed = ELAPSED_FIELDS[body[0] ?? ""];
+        if (elapsed !== undefined && isRepeatOf(body, body[0]!)) {
+          tokens.push({ kind: "datetime", field: elapsed, width: body.length });
+          if (!sawDateField) firstDateFieldAt = i;
+          sawDateField = true;
+          i = close + 1;
+          break;
+        }
         if (!COLOUR_SET.has(body)) {
           throw new FormatCodeError(
             `unsupported format modifier [${source.slice(i + 1, close)}]`,
@@ -366,12 +424,48 @@ function parseSection(
         break;
       }
 
+      case "A":
+      case "a": {
+        // `AM/PM` and its short form `A/P`. Anything else starting with an `a`
+        // is not a format code this engine knows.
+        const upper = source.slice(i, Math.min(i + 5, to)).toUpperCase();
+        if (upper.startsWith("AM/PM")) {
+          tokens.push({ kind: "datetime", field: "meridiem", width: 5 });
+          if (!sawDateField) firstDateFieldAt = i;
+          sawDateField = true;
+          clock12 = true;
+          i += 5;
+          break;
+        }
+        if (upper.startsWith("A/P")) {
+          tokens.push({ kind: "datetime", field: "meridiem", width: 1 });
+          if (!sawDateField) firstDateFieldAt = i;
+          sawDateField = true;
+          clock12 = true;
+          i += 3;
+          break;
+        }
+        throw new FormatCodeError(
+          `unexpected character ${JSON.stringify(char)} in a format code`,
+          i,
+        );
+      }
+
       default: {
         if (DATE_CHARS.has(char)) {
-          throw new FormatCodeError(
-            "date and time format codes are not supported",
-            i,
-          );
+          // A run of the same letter; its length picks the width.
+          const letter = char.toLowerCase();
+          let end = i;
+          while (end < to && source[end]!.toLowerCase() === letter) end += 1;
+          tokens.push({
+            kind: "datetime",
+            field: RAW_DATE_FIELDS[letter]!,
+            width: end - i,
+          });
+          if (!sawDateField) firstDateFieldAt = i;
+          sawDateField = true;
+          i = end;
+          break;
         }
         if (PASS_THROUGH.has(char)) {
           tokens.push({ kind: "literal", text: char });
@@ -403,6 +497,30 @@ function parseSection(
     tokenList.push(token);
   });
 
+  if (sawDateField) {
+    if (intDigits + decimals > 0 || hasText) {
+      throw new FormatCodeError(
+        "a section mixes date fields with digit positions",
+        firstDateFieldAt,
+      );
+    }
+    return {
+      tokens: resolveMinutes(tokenList),
+      colour,
+      intDigits: 0,
+      minIntDigits: 0,
+      decimals: 0,
+      grouped: false,
+      scaleBy: 0,
+      percents: 0,
+      exponentDigits: 0,
+      hasTextPlaceholder: false,
+      literalOnly: false,
+      dateTime: true,
+      clock12,
+    };
+  }
+
   return {
     tokens: tokenList,
     colour,
@@ -415,7 +533,64 @@ function parseSection(
     exponentDigits,
     hasTextPlaceholder: hasText,
     literalOnly: intDigits + decimals === 0 && !hasText,
+    dateTime: false,
+    clock12: false,
   };
+}
+
+/**
+ * Decide what each `m` run meant.
+ *
+ * `m` is the one genuinely ambiguous code: it is a month unless it sits next to
+ * an hour or a second, in which case it is a minute. That cannot be settled
+ * while reading left to right — `m:ss` is a minute and only the `ss` says so —
+ * so every `m` is parsed as a month and corrected here, by looking outward from
+ * each one for the nearest other clock or calendar field.
+ */
+function resolveMinutes(tokens: readonly FormatToken[]): FormatToken[] {
+  return tokens.map((token, index) => {
+    if (token.kind !== "datetime" || token.field !== "month") return token;
+    if (isClockField(previousDateField(tokens, index))) {
+      return { ...token, field: "minute" as const };
+    }
+    if (nextDateField(tokens, index) === "second") {
+      return { ...token, field: "minute" as const };
+    }
+    return token;
+  });
+}
+
+function previousDateField(
+  tokens: readonly FormatToken[],
+  index: number,
+): DateTimeField | null {
+  for (let i = index - 1; i >= 0; i--) {
+    const token = tokens[i]!;
+    if (token.kind === "datetime") return token.field;
+  }
+  return null;
+}
+
+function nextDateField(
+  tokens: readonly FormatToken[],
+  index: number,
+): DateTimeField | null {
+  for (let i = index + 1; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (token.kind === "datetime") return token.field;
+  }
+  return null;
+}
+
+function isClockField(field: DateTimeField | null): boolean {
+  return field === "hour" || field === "elapsedHour";
+}
+
+function isRepeatOf(body: string, letter: string): boolean {
+  for (const char of body) {
+    if (char !== letter) return false;
+  }
+  return body.length > 0;
 }
 
 function isDigitChar(char: string | undefined): boolean {

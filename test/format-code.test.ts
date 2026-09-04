@@ -177,18 +177,78 @@ describe("scientific codes", () => {
   });
 });
 
-describe("out of scope codes", () => {
-  it("rejects date codes with a position", () => {
+describe("date and time codes", () => {
+  it("reads a run of letters as one field of that width", () => {
+    expect(section("yyyy-mm-dd").tokens).toEqual([
+      { kind: "datetime", field: "year", width: 4 },
+      { kind: "literal", text: "-" },
+      { kind: "datetime", field: "month", width: 2 },
+      { kind: "literal", text: "-" },
+      { kind: "datetime", field: "day", width: 2 },
+    ]);
+    expect(section("yyyy-mm-dd").dateTime).toBe(true);
+    expect(section("0.00").dateTime).toBe(false);
+  });
+
+  it("reads m as a month unless a clock field is next to it", () => {
+    const fields = (code: string) =>
+      section(code)
+        .tokens.filter((token) => token.kind === "datetime")
+        .map((token) => (token as { field: string }).field);
+    expect(fields("mm")).toEqual(["month"]);
+    expect(fields("mm/dd")).toEqual(["month", "day"]);
+    expect(fields("hh:mm")).toEqual(["hour", "minute"]);
+    expect(fields("mm:ss")).toEqual(["minute", "second"]);
+    expect(fields("yyyy-mm-dd hh:mm:ss")).toEqual([
+      "year",
+      "month",
+      "day",
+      "hour",
+      "minute",
+      "second",
+    ]);
+    expect(fields("[h]:mm")).toEqual(["elapsedHour", "minute"]);
+  });
+
+  it("reads the meridiem markers and marks the section as 12-hour", () => {
+    expect(section("h:mm AM/PM").clock12).toBe(true);
+    expect(section("h:mm A/P").tokens).toContainEqual({
+      kind: "datetime",
+      field: "meridiem",
+      width: 1,
+    });
+    expect(section("hh:mm").clock12).toBe(false);
+  });
+
+  it("reads the bracketed elapsed codes", () => {
+    expect(section("[hh]").tokens).toEqual([
+      { kind: "datetime", field: "elapsedHour", width: 2 },
+    ]);
+    expect(section("[s]").tokens).toEqual([
+      { kind: "datetime", field: "elapsedSecond", width: 1 },
+    ]);
+    // A bracket that is neither a colour nor an elapsed code is still refused.
+    expect(() => parseFormatCode("[wat]")).toThrow(/unsupported format modifier/);
+  });
+
+  it("keeps colours working alongside date fields", () => {
+    expect(section("[Red]yyyy").colour).toBe("red");
+  });
+
+  it("refuses to mix date fields with digit positions", () => {
     try {
-      parseFormatCode("yyyy-mm-dd");
+      parseFormatCode("0yyyy");
       throw new Error("expected a rejection");
     } catch (error) {
       expect(error).toBeInstanceOf(FormatCodeError);
-      expect((error as FormatCodeError).offset).toBe(0);
-      expect((error as FormatCodeError).message).toMatch(/date and time/);
+      expect((error as FormatCodeError).offset).toBe(1);
+      expect((error as FormatCodeError).message).toMatch(/mixes date fields/);
     }
+    expect(() => parseFormatCode("yyyy@")).toThrow(/mixes date fields/);
   });
+});
 
+describe("out of scope codes", () => {
   it("rejects fraction codes", () => {
     expect(() => parseFormatCode("# ?/?")).toThrow(/fraction/);
   });

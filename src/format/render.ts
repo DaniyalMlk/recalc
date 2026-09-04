@@ -4,6 +4,12 @@ import type { Value } from "../engine/value.js";
 import { base10Exponent, roundToPlaces } from "./decimal.js";
 import { isGeneralFormat, parseFormatCode } from "./code.js";
 import type { FormatCode, FormatColour, FormatSection } from "./code.js";
+import {
+  civilFromSerial,
+  clockFromSerial,
+  isValidSerial,
+  weekdayIndex,
+} from "../date/serial.js";
 
 /** What a format produced: the text, and any colour the section asked for. */
 export interface FormattedValue {
@@ -43,6 +49,15 @@ export function applyFormat(code: FormatCode, value: Value): FormattedValue {
   if (picked === null) return { text: generalText(value), colour: null };
 
   const { section, negate, signed } = picked;
+  if (section.dateTime) {
+    // A date code has nothing to say about a value that is not a date. Rather
+    // than invent one, the value is shown as it would be with no format at all,
+    // which at least tells the reader what is actually in the cell.
+    if (!isValidSerial(number)) {
+      return { text: generalText(value), colour: null };
+    }
+    return { text: renderDateTime(section, number), colour: section.colour };
+  }
   const text = renderNumber(section, negate ? -number : number, signed);
   return { text, colour: section.colour };
 }
@@ -337,4 +352,133 @@ function padCharacter(pad: "zero" | "none" | "space" | undefined): string {
 /** True when the value should be right-aligned, i.e. it reads as a number. */
 export function isNumericValue(value: Value): boolean {
   return !isFormulaError(value) && kindOf(value) === "number";
+}
+
+// ---------------------------------------------------------------------------
+// Date and time sections
+// ---------------------------------------------------------------------------
+
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+const DAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+function pad(value: number, width: number): string {
+  const text = String(Math.abs(value));
+  return (value < 0 ? "-" : "") + text.padStart(width, "0");
+}
+
+/**
+ * Lay out a serial through a date section.
+ *
+ * The clock fields are read from a single rounded second count so that a
+ * format showing hours and minutes cannot disagree with itself — rounding each
+ * field separately is how 11:59:60 gets printed.
+ */
+function renderDateTime(section: FormatSection, serial: number): string {
+  const date = civilFromSerial(serial);
+  const clock = clockFromSerial(serial);
+  const hour12 = clock.hour % 12 === 0 ? 12 : clock.hour % 12;
+  const totalSeconds = Math.round(serial * 86400);
+
+  let out = "";
+  for (const token of section.tokens) {
+    switch (token.kind) {
+      case "literal":
+        out += token.text;
+        break;
+      case "skip":
+        out += " ";
+        break;
+      case "datetime":
+        out += renderField(token.field, token.width, {
+          serial,
+          date,
+          clock,
+          hour12,
+          totalSeconds,
+          clock12: section.clock12,
+        });
+        break;
+      default:
+        break;
+    }
+  }
+  return out;
+}
+
+interface DateParts {
+  readonly serial: number;
+  readonly date: { readonly year: number; readonly month: number; readonly day: number };
+  readonly clock: { readonly hour: number; readonly minute: number; readonly second: number };
+  readonly hour12: number;
+  readonly totalSeconds: number;
+  readonly clock12: boolean;
+}
+
+function renderField(
+  field: string,
+  width: number,
+  parts: DateParts,
+): string {
+  const { serial, date, clock, hour12, totalSeconds, clock12 } = parts;
+  switch (field) {
+    case "year":
+      return width <= 2
+        ? pad(((date.year % 100) + 100) % 100, 2)
+        : pad(date.year, 4);
+    case "month":
+      if (width === 1) return String(date.month);
+      if (width === 2) return pad(date.month, 2);
+      if (width === 3) return MONTH_NAMES[date.month - 1]!.slice(0, 3);
+      if (width === 4) return MONTH_NAMES[date.month - 1]!;
+      return MONTH_NAMES[date.month - 1]!.slice(0, 1);
+    case "day":
+      if (width === 1) return String(date.day);
+      if (width === 2) return pad(date.day, 2);
+      if (width === 3) return DAY_NAMES[weekdayIndex(serial)]!.slice(0, 3);
+      return DAY_NAMES[weekdayIndex(serial)]!;
+    case "hour":
+      return pad(clock12 ? hour12 : clock.hour, Math.min(width, 2));
+    case "minute":
+      return pad(clock.minute, Math.min(width, 2));
+    case "second":
+      return pad(clock.second, Math.min(width, 2));
+    case "meridiem":
+      return width === 5
+        ? clock.hour < 12
+          ? "AM"
+          : "PM"
+        : clock.hour < 12
+          ? "A"
+          : "P";
+    case "elapsedHour":
+      return pad(Math.floor(totalSeconds / 3600), width);
+    case "elapsedMinute":
+      return pad(Math.floor(totalSeconds / 60), width);
+    case "elapsedSecond":
+      return pad(totalSeconds, width);
+    default:
+      return "";
+  }
 }

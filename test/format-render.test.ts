@@ -221,9 +221,14 @@ describe("the TEXT function", () => {
   });
 
   it("returns #VALUE! for a code it cannot compile", () => {
-    const value = evaluate('=TEXT(1,"yyyy")');
+    const value = evaluate('=TEXT(1,"# ?/?")');
     expect(isFormulaError(value) && value.code).toBe("#VALUE!");
-    expect(isFormulaError(value) && value.detail).toMatch(/date and time/);
+    expect(isFormulaError(value) && value.detail).toMatch(/fraction/);
+  });
+
+  it("formats a serial through a date code", () => {
+    expect(evaluate('=TEXT(DATE(2026,3,4),"yyyy-mm-dd")')).toBe("2026-03-04");
+    expect(evaluate('=TEXT(DATE(2026,3,4),"d mmm yyyy")')).toBe("4 Mar 2026");
   });
 
   it("propagates an error argument", () => {

@@ -44,7 +44,7 @@ describe("applying a format", () => {
 
   it("refuses a malformed code and leaves the sheet untouched", () => {
     const sheet = book({ A1: 1 });
-    expect(() => sheet.setFormat("A1", "yyyy")).toThrow(FormatCodeError);
+    expect(() => sheet.setFormat("A1", "0yyyy")).toThrow(FormatCodeError);
     expect(sheet.formatOf("A1")).toBeNull();
     expect(sheet.getDisplay("A1")).toBe("1");
   });

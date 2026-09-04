@@ -524,7 +524,7 @@ describe("number formats", () => {
 
   it("reports a malformed code with its position", () => {
     const out = one(".format A1 = 0yyyy", ["A1 = 1"]);
-    expect(out).toContain("date and time");
+    expect(out).toContain("mixes date fields");
     expect(out).toContain("(at 1)");
   });
 
