@@ -138,3 +138,12 @@ tree green and the public API usable.
 - [x] `TODAY` and `NOW` on a clock the host can replace
 - [x] Date, time and elapsed codes in the format compiler and renderer
 - [x] Date and duration presets in the grid's format menu and the shell's help
+
+## Phase 17 — Amortisation
+
+- [x] `IPMT` and `PPMT` in closed form, so a period costs the same wherever it sits in the term
+- [x] `CUMIPMT` and `CUMPRINC` over a span, validated against the published worked examples
+- [x] `ISPMT` for a loan whose principal is repaid in equal slices
+- [x] A schedule builder whose closing balance lands exactly on zero, or on a balloon
+- [x] `.amortise` in the shell, reading a rate the way a term sheet quotes it
+- [x] The schedule laid into the sheet as well as printed
