@@ -37,12 +37,8 @@ defineFunction({
   call(args) {
     let count = 0;
     for (const arg of args) {
-      if (arg.kind === "range") {
-        for (const value of arg.values) {
-          if (kindOf(value) === "number") count++;
-        }
-      } else if (kindOf(arg.value) === "number") {
-        count++;
+      for (const value of argValues(arg)) {
+        if (kindOf(value) === "number") count++;
       }
     }
     return count;
@@ -207,9 +203,7 @@ defineFunction({
   maxArgs: 2,
   call(args) {
     const values = argValues(args[0]!);
-    const criterionArg = args[1]!;
-    const criterion =
-      criterionArg.kind === "scalar" ? criterionArg.value : (criterionArg.values[0] ?? null);
+    const criterion = argValues(args[1]!)[0] ?? null;
     let count = 0;
     for (const value of values) {
       const cmp = compareValues(value, criterion);

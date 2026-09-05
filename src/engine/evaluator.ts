@@ -1,4 +1,6 @@
 import type { BinaryNode, Node } from "./ast.js";
+import { broadcast, collapse, isMatrix, mapMatrix } from "./array.js";
+import type { CallResult } from "./array.js";
 import {
   DIV0_ERROR,
   NUM_ERROR,
@@ -8,9 +10,12 @@ import {
 } from "./errors.js";
 import type { FormulaError } from "./errors.js";
 import {
+  argMatrix,
   argValue,
+  array,
   checkArity,
   firstError,
+  isSingleValue,
   lookupFunction,
   scalar,
 } from "../functions/registry.js";
@@ -39,6 +44,21 @@ export interface EvalContext {
 /** Evaluate a formula AST to a single value. */
 export function evaluate(node: Node, context: EvalContext): Value {
   return argValue(evaluateArg(node, context));
+}
+
+/**
+ * Evaluate a formula to whatever it produces — one value, or a block.
+ *
+ * This is what a cell is evaluated with. {@link evaluate} stays the scalar
+ * entry point because most callers (an operand, a probe, a goal seek) want one
+ * number and would only have to collapse a block again; the sheet is the one
+ * place that can do something with the shape, so it is the one place that
+ * asks for it.
+ */
+export function evaluateResult(node: Node, context: EvalContext): CallResult {
+  const arg = evaluateArg(node, context);
+  if (arg.kind === "array") return collapse(arg.matrix);
+  return argValue(arg);
 }
 
 /**
@@ -96,36 +116,74 @@ export function evaluateArg(node: Node, context: EvalContext): Arg {
       }
     }
 
-    case "unary": {
-      const operand = evaluate(node.operand, context);
-      if (isFormulaError(operand)) return scalar(operand);
+    case "unary":
       // Unary plus is an identity, not a coercion: `+"abc"` is `"abc"`.
-      if (node.op === "+") return scalar(operand);
-      const n = toNumber(operand);
-      return scalar(isFormulaError(n) ? n : -n);
-    }
+      return elementwise(node.operand, context, (value) => {
+        if (isFormulaError(value)) return value;
+        if (node.op === "+") return value;
+        const n = toNumber(value);
+        return isFormulaError(n) ? n : -n;
+      });
 
-    case "percent": {
-      const operand = evaluate(node.operand, context);
-      const n = toNumber(operand);
-      return scalar(isFormulaError(n) ? n : n / 100);
-    }
+    case "percent":
+      return elementwise(node.operand, context, (value) => {
+        const n = toNumber(value);
+        return isFormulaError(n) ? n : n / 100;
+      });
 
     case "binary":
-      return scalar(evaluateBinary(node, context));
+      return evaluateBinary(node, context);
 
-    case "call":
-      return scalar(evaluateCall(node.name, node.args, context));
+    case "call": {
+      const result = evaluateCall(node.name, node.args, context);
+      return isMatrix(result) ? array(result) : scalar(result);
+    }
   }
 }
 
-function evaluateBinary(node: BinaryNode, context: EvalContext): Value {
-  const left = evaluate(node.left, context);
+/**
+ * Apply a unary operator across whatever the operand turned out to be.
+ *
+ * One value in, one value out; a block in, a block of the same shape out.
+ */
+function elementwise(
+  operand: Node,
+  context: EvalContext,
+  f: (value: Value) => Value,
+): Arg {
+  const arg = evaluateArg(operand, context);
+  if (isSingleValue(arg)) return scalar(f(argValue(arg)));
+  return array(mapMatrix(argMatrix(arg), f));
+}
+
+/**
+ * Apply a binary operator, broadcasting when either side is a block.
+ *
+ * The scalar case is kept on its own path rather than routed through a 1x1
+ * broadcast, because it is overwhelmingly the common one and it is on the hot
+ * path of every recalculation.
+ */
+function evaluateBinary(node: BinaryNode, context: EvalContext): Arg {
+  const left = evaluateArg(node.left, context);
+  const right = evaluateArg(node.right, context);
+  const combine = (a: Value, b: Value): Value => combineValues(node.op, a, b);
+
+  if (isSingleValue(left) && isSingleValue(right)) {
+    return scalar(combine(argValue(left), argValue(right)));
+  }
+  const result = broadcast(argMatrix(left), argMatrix(right), combine);
+  return isFormulaError(result) ? scalar(result) : array(result);
+}
+
+function combineValues(
+  op: BinaryNode["op"],
+  left: Value,
+  right: Value,
+): Value {
   if (isFormulaError(left)) return left;
-  const right = evaluate(node.right, context);
   if (isFormulaError(right)) return right;
 
-  switch (node.op) {
+  switch (op) {
     case "&": {
       const a = toText(left);
       if (isFormulaError(a)) return a;
@@ -142,7 +200,7 @@ function evaluateBinary(node: BinaryNode, context: EvalContext): Value {
     case ">=": {
       const cmp = compareValues(left, right);
       if (isFormulaError(cmp)) return cmp;
-      switch (node.op) {
+      switch (op) {
         case "=":
           return cmp === 0;
         case "<>":
@@ -163,7 +221,7 @@ function evaluateBinary(node: BinaryNode, context: EvalContext): Value {
       if (isFormulaError(a)) return a;
       const b = toNumber(right);
       if (isFormulaError(b)) return b;
-      return arithmetic(node.op, a, b);
+      return arithmetic(op, a, b);
     }
   }
 }
@@ -198,7 +256,7 @@ function evaluateCall(
   name: string,
   argNodes: readonly Node[],
   context: EvalContext,
-): Value {
+): CallResult {
   const def = lookupFunction(name);
   const arityError = checkArity(def, name, argNodes.length);
   if (arityError !== null) return arityError;

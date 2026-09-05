@@ -1,9 +1,8 @@
 import { NA_ERROR, REF_ERROR, VALUE_ERROR, isFormulaError } from "../engine/errors.js";
-import { normalizeRange } from "../engine/reference.js";
 import { compareValues, toBoolean } from "../engine/value.js";
 import type { Value } from "../engine/value.js";
-import { argValue, argValues, defineFunction } from "./registry.js";
-import type { Arg, RangeArg } from "./registry.js";
+import { argMatrix, argValue, argValues, defineFunction } from "./registry.js";
+import type { Arg } from "./registry.js";
 
 interface Shape {
   readonly rows: number;
@@ -11,15 +10,19 @@ interface Shape {
   cell(row: number, col: number): Value;
 }
 
-/** Interpret a range argument as a rectangular block, zero-indexed. */
+/**
+ * Interpret an argument as a rectangular block, zero-indexed.
+ *
+ * A range brings its shape from the sheet and an array carries its own, so
+ * `INDEX` and the lookups work identically on either — `INDEX(TRANSPOSE(x),2,1)`
+ * needs no special case.
+ */
 function shapeOf(arg: Arg): Shape | Value {
   if (arg.kind === "scalar") {
     return { rows: 1, cols: 1, cell: () => arg.value };
   }
-  const range = normalizeRange((arg as RangeArg).range);
-  const rows = range.end.row - range.start.row + 1;
-  const cols = range.end.col - range.start.col + 1;
-  const values = arg.values;
+  const block = argMatrix(arg);
+  const { rows, cols, values } = block;
   return {
     rows,
     cols,
