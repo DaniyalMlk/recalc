@@ -7,6 +7,8 @@ import {
   formatRange,
   iterateRange,
   labelToColumn,
+  rangeHeight,
+  rangeWidth,
   parseA1,
   parseA1Range,
 } from "./engine/reference.js";
@@ -60,6 +62,7 @@ export const HELP = `
     .deps A1                what reads A1
     .plan A1                recalculation order if A1 changed
     .cycles                 circular references in the sheet
+    .spill A1               the block a cell belongs to, and its anchor
 
   ${paint(BOLD, "Other")}
     .fns [prefix]           registered functions
@@ -202,9 +205,21 @@ function describeCell(book: Workbook, address: string): string {
       ? paint(DIM, `  ${value.detail ?? ""}`)
       : "";
   const source = formula === null ? "" : paint(DIM, `   ${formula}`);
+  // A spilled cell has no formula of its own, so it says where it came from
+  // instead; without that, a listing shows values with no visible origin.
+  const anchor = book.spillAnchorOf(address);
+  const origin =
+    formula !== null || anchor === null || anchor === address
+      ? ""
+      : paint(DIM, `   spilled from ${anchor}`);
+  const region = book.spillRegionOf(address);
+  const spread =
+    formula === null || region === null
+      ? ""
+      : paint(DIM, ` -> ${formatRange(region)}`);
   const code = book.formatOf(address);
   const shownCode = code === null ? "" : paint(DIM, `   [${code}]`);
-  return `  ${paint(CYAN, address)}  ${shown}${source}${shownCode}${detail}`;
+  return `  ${paint(CYAN, address)}  ${shown}${source}${spread}${origin}${shownCode}${detail}`;
 }
 
 function listCells(book: Workbook): string[] {
@@ -473,6 +488,26 @@ function handle(
         ? paint(DIM, "  none")
         : `  ${result.join("  ")}`;
     }
+  }
+
+  if (line.startsWith(".spill ")) {
+    const address = line.slice(7).trim();
+    let coord: CellRef;
+    try {
+      coord = parseA1(address);
+    } catch {
+      return paint(RED, `  ${address} is not a cell`);
+    }
+    const region = book.spillRegionOf(coord);
+    if (region === null) {
+      return paint(DIM, `  ${address} is not part of a block`);
+    }
+    const anchor = book.spillAnchorOf(coord) ?? address;
+    const size = `${rangeHeight(region)}x${rangeWidth(region)}`;
+    return [
+      `  ${paint(CYAN, formatRange(region))}  ${size}, from ${anchor}`,
+      paint(DIM, `  ${book.getFormula(anchor) ?? ""}`),
+    ].join("\n");
   }
 
   if (line.startsWith(".plan ")) {
