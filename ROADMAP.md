@@ -167,3 +167,16 @@ tree green and the public API usable.
 - [x] Re-seeding on a changed footprint, since a block's size is not an edge in the graph
 - [x] `SEQUENCE`, `TRANSPOSE`, `TOROW`, `TOCOL` and the shape functions
 - [x] `.spill` in the shell, and a block outlined in the grid with its origin named
+
+## Phase 20 — Linear algebra and regression
+
+- [x] LU with partial pivoting behind the determinant, the inverse and the solve
+- [x] A pivot tested against a tolerance that scales with the matrix, not against zero
+- [x] Householder QR behind the fit, so the design matrix is never squared
+- [x] Standard errors read off `R` inverse rather than by inverting `X` transpose `X`
+- [x] `MMULT`, `MINVERSE`, `MDETERM`, `MUNIT`, `MSOLVE`
+- [x] `LINEST`, coefficients alone and the full five-row statistics block
+- [x] `TREND` and `FORECAST` over the same fit, in both orientations and through zero
+- [x] `SLOPE`, `INTERCEPT`, `RSQ`, `PEARSON`, `CORREL`, `COVARIANCE.P`, `COVARIANCE.S`, `STEYX`
+- [x] Every figure of the published multiple-regression example reproduced
+- [x] `.regress` in the shell, laid out as a summary with a t statistic per term
