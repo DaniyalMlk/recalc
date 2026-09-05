@@ -18,6 +18,14 @@ export interface CellPaint {
   readonly kind: "number" | "text" | "boolean" | "error" | "blank";
   readonly isFormula: boolean;
   /**
+   * Whether the value was spilled here by a formula in another cell.
+   *
+   * Typing into a spilled cell displaces the whole block, so it is worth
+   * being able to see, at a glance, which values are derived and which were
+   * put there by hand.
+   */
+  readonly isSpilled: boolean;
+  /**
    * A colour the cell's number format asked for, as a CSS custom-property
    * name, or `null` to leave the cell in the sheet's own ink.
    */
@@ -75,6 +83,7 @@ export class GridView {
   private active: Coord = { row: 0, col: 0 };
   private highlight: Highlight | null = null;
   private marquee: CellRect | null = null;
+  private spill: CellRect | null = null;
 
   private dragging = false;
   private resizing: { col: number; startX: number; startWidth: number } | null =
@@ -133,6 +142,18 @@ export class GridView {
    */
   setMarquee(rect: CellRect | null): void {
     this.marquee = rect;
+    this.paintMarks();
+  }
+
+  /**
+   * Outline the block the selection sits inside, or clear the outline.
+   *
+   * The cells of a block look like any others until you try to type in one,
+   * and then the whole thing moves. Drawing its boundary while the selection
+   * is inside it is what makes that predictable rather than surprising.
+   */
+  setSpill(rect: CellRect | null): void {
+    this.spill = rect;
     this.paintMarks();
   }
 
@@ -224,7 +245,7 @@ export class GridView {
         const slot =
           this.highlight === null ? null : slotForCell(this.highlight, row, col);
 
-        const signature = `${row}:${col}|${paint.text}|${paint.kind}|${paint.isFormula ? 1 : 0}|${slot ?? ""}|${paint.colour ?? ""}`;
+        const signature = `${row}:${col}|${paint.text}|${paint.kind}|${paint.isFormula ? 1 : 0}|${paint.isSpilled ? 1 : 0}|${slot ?? ""}|${paint.colour ?? ""}`;
         if (!force && node.dataset["sig"] === signature) continue;
         node.dataset["sig"] = signature;
         node.dataset["row"] = String(row);
@@ -236,7 +257,7 @@ export class GridView {
         node.textContent = paint.text;
         node.className = `cell cell--${paint.kind}${
           paint.isFormula ? " cell--formula" : ""
-        }`;
+        }${paint.isSpilled ? " cell--spilled" : ""}`;
         // Cells are recycled, so a colour has to be cleared as explicitly as
         // it is set — otherwise a scrolled-away red negative tints whatever
         // cell inherits its node.
@@ -325,6 +346,10 @@ export class GridView {
     const isSingle =
       this.selection.top === this.selection.bottom &&
       this.selection.left === this.selection.right;
+
+    // Under the selection, so an active cell inside a block still reads as
+    // the active cell.
+    if (this.spill !== null) place("mark mark--spill", this.spill, 1);
 
     if (this.marquee !== null) place("mark mark--copy", this.marquee, 1);
 

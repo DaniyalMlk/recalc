@@ -23,6 +23,8 @@ export const SAMPLE_SHEET: Record<string, string> = {
   F6: "Capex",
   G6: "Free cash flow",
   H6: "Period end",
+  I6: "Discount factor",
+  J6: "Discounted flow",
 
   A7: "0",
   B7: "0",
@@ -76,6 +78,20 @@ export const SAMPLE_SHEET: Record<string, string> = {
   // the difference is visible rather than rounded away, which is the whole
   // reason for carrying an XIRR beside an IRR.
   B20: "=XIRR(CashFlow,PeriodEnd)",
+
+  // Two blocks, each written once and spilled down the seven project years.
+  // The exponent is a column of 0..6, so one formula produces the whole
+  // discount curve; the second multiplies two seven-row blocks elementwise.
+  I7: "=1/(1+DiscountRate)^SEQUENCE(7,1,0,1)",
+  J7: "=CashFlow*I7:I13",
+
+  // The same net present value, reached the other way round. B15 discounts
+  // through NPV; this sums the discounted column. They agree to the cent, and
+  // the difference between them is the check.
+  A22: "NPV from the block",
+  B22: "=SUM(J7:J13)",
+  A23: "Agrees with B15",
+  B23: '=IF(ABS(B22-B15)<0.005,"yes","no")',
 };
 
 /**
@@ -123,6 +139,9 @@ export const SAMPLE_FORMATS: Record<string, string> = {
   "B17:B18": "$#,##0;[Red]($#,##0)",
   "B20": "0.000%",
   "H7:H13": "yyyy-mm-dd",
+  "I7:I13": "0.0000",
+  "J7:J13": "#,##0;[Red](#,##0)",
+  "B22": "$#,##0;[Red]($#,##0)",
 };
 
 /** Column widths the example reads best at, by column index. */
@@ -135,4 +154,6 @@ export const SAMPLE_WIDTHS: Record<number, number> = {
   5: 112,
   6: 132,
   7: 118,
+  8: 126,
+  9: 134,
 };

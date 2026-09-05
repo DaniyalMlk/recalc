@@ -1,5 +1,5 @@
 import { isFormulaError } from "../../../src/engine/errors.js";
-import { formatA1 } from "../../../src/engine/reference.js";
+import { formatA1, formatRange } from "../../../src/engine/reference.js";
 import type { Coord } from "../../../src/engine/reference.js";
 import { kindOf } from "../../../src/engine/value.js";
 import type { Workbook } from "../../../src/engine/workbook.js";
@@ -73,8 +73,26 @@ export class Inspector {
     const parts: string[] = [];
     const input = workbook.getInput(address);
     const formula = workbook.getFormula(address);
+    const anchor = workbook.spillAnchorOf(address);
+    const region = workbook.spillRegionOf(address);
 
-    parts.push(field("Entered", escape(input)));
+    // A spilled cell holds no input of its own, so "Entered: nothing" would be
+    // both true and useless. It says where the value came from instead, and
+    // the anchor is a chip, so one click reaches the formula that made it.
+    if (anchor !== null && anchor !== address) {
+      parts.push(field("Spilled from", chips([anchor])));
+    } else {
+      parts.push(field("Entered", escape(input)));
+    }
+
+    if (region !== null) {
+      parts.push(
+        field(
+          anchor === address ? "Spills across" : "Part of",
+          escape(formatRange(region)),
+        ),
+      );
+    }
 
     if (formula !== null && formula !== input) {
       parts.push(field("Canonical", escape(formula)));
