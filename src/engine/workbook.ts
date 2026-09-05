@@ -2,8 +2,10 @@ import "../functions/index.js";
 
 import type { Node } from "./ast.js";
 import { CYCLE_ERROR, err } from "./errors.js";
-import { evaluate } from "./evaluator.js";
+import { evaluate, evaluateResult } from "./evaluator.js";
 import type { EvalContext } from "./evaluator.js";
+import type { CallResult } from "./array.js";
+import { SpillTable } from "./spill.js";
 import { DependencyGraph } from "./graph.js";
 import { FormatTable } from "./formats.js";
 import { EditJournal, diffInputs } from "./history.js";
@@ -80,6 +82,32 @@ function blockLabel(range: RangeRef): string {
 /** Render a coordinate as a plain, unanchored A1 address. */
 function addressOf(coord: Coord): string {
   return formatA1({ ...coord, colAbsolute: false, rowAbsolute: false });
+}
+
+/** How many times a recalculation will chase a moving spill footprint. */
+const MAX_SPILL_PASSES = 16;
+
+/** The bounding box covering both, or whichever one exists. */
+function unionExtent(
+  a: RangeRef | null,
+  b: RangeRef | null,
+): RangeRef | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return {
+    start: {
+      col: Math.min(a.start.col, b.start.col),
+      row: Math.min(a.start.row, b.start.row),
+      colAbsolute: false,
+      rowAbsolute: false,
+    },
+    end: {
+      col: Math.max(a.end.col, b.end.col),
+      row: Math.max(a.end.row, b.end.row),
+      colAbsolute: false,
+      rowAbsolute: false,
+    },
+  };
 }
 
 /** A short description of a structural edit, for the undo history. */
@@ -201,6 +229,17 @@ export class Workbook {
   private readonly formats = new FormatTable();
   private readonly graph = new DependencyGraph();
   private readonly nameTable = new NameTable();
+  private readonly spills = new SpillTable();
+
+  /**
+   * Cells a spill covered or uncovered during the pass now running.
+   *
+   * A spill's footprint is not a dependency the graph can see: a formula reads
+   * `C3`, and whether `C3` has a value depends on the *size* of a block three
+   * columns away, which is only known once that block has been computed. So
+   * the changes are collected here and fed back as a second wave of seeds.
+   */
+  private spillTouched: Coord[] = [];
 
   /**
    * Which cells mention which name.
@@ -225,10 +264,22 @@ export class Workbook {
   private recording = false;
 
   private readonly context: EvalContext = {
-    readCell: (coord) => this.cells.get(coord)?.value ?? null,
+    readCell: (coord) => this.valueAt(coord),
     readRange: (range) => this.readRange(range),
     resolveName: (name) => this.nameTable.get(name),
   };
+
+  /**
+   * What a coordinate holds, whether it was typed or spilled into.
+   *
+   * A typed cell always wins: a spill is never allowed to land on one, so the
+   * two can only both be present for the instant before the spill is refused.
+   */
+  private valueAt(coord: Coord): Value {
+    const record = this.cells.get(coord);
+    if (record !== undefined) return record.value;
+    return this.spills.at(coord)?.value ?? null;
+  }
 
   /** Whether there is an operation to undo. */
   get canUndo(): boolean {
@@ -434,6 +485,12 @@ export class Workbook {
   private writeInputs(entries: Iterable<readonly [Coord, string]>): void {
     const seeds: Coord[] = [];
     for (const [coord, text] of entries) {
+      // Typing into a cell a block covers displaces the block, so the formula
+      // that produced it has to be told — it is upstream of this edit, which
+      // is the one direction the dependency graph cannot walk.
+      const covering = this.spills.anchorAt(coord);
+      if (covering !== undefined) seeds.push(covering);
+
       if (text === "") {
         this.cells.delete(coord);
         this.writePrecedents(coord, null);
@@ -445,6 +502,8 @@ export class Workbook {
       this.writePrecedents(coord, ast);
       seeds.push(coord);
     }
+    // Any edit at all may have cleared what was in a refused block's way.
+    seeds.push(...this.spills.blockedAnchors());
     this.recalculateFrom(seeds);
   }
 
@@ -791,7 +850,37 @@ export class Workbook {
   }
 
   getValue(address: Address): Value {
-    return this.cells.get(toCoord(address))?.value ?? null;
+    return this.valueAt(toCoord(address));
+  }
+
+  /**
+   * The region a formula's block occupies, or `null` when it does not spill.
+   *
+   * Given a cell inside a block rather than its anchor, this still answers
+   * with the whole block, so a caller holding any cell of it can draw or
+   * select the lot.
+   */
+  spillRegionOf(address: Address): RangeRef | null {
+    const coord = toCoord(address);
+    const anchor = this.spills.anchorAt(coord) ?? coord;
+    return this.spills.regionOf(anchor);
+  }
+
+  /** The anchor of the block covering this cell, as A1, or `null`. */
+  spillAnchorOf(address: Address): string | null {
+    const anchor = this.spills.anchorAt(toCoord(address));
+    return anchor === undefined ? null : addressOf(anchor);
+  }
+
+  /** Whether this cell holds a spilled value rather than one that was typed. */
+  isSpilled(address: Address): boolean {
+    const coord = toCoord(address);
+    return !this.cells.has(coord) && this.spills.covers(coord);
+  }
+
+  /** Whether this cell is the anchor of a block larger than itself. */
+  isSpillAnchor(address: Address): boolean {
+    return this.spills.regionOf(toCoord(address)) !== null;
   }
 
   /** The value as it would be displayed in the cell, format applied. */
@@ -807,7 +896,7 @@ export class Workbook {
    */
   getFormatted(address: Address): FormattedValue {
     const coord = toCoord(address);
-    return this.formats.render(coord, this.cells.get(coord)?.value ?? null);
+    return this.formats.render(coord, this.valueAt(coord));
   }
 
   /** Exactly what was typed into the cell. */
@@ -821,17 +910,25 @@ export class Workbook {
     return ast == null ? null : printFormula(ast, true);
   }
 
+  /** Whether the cell shows anything, whether it was typed or spilled into. */
   has(address: Address): boolean {
-    return this.cells.has(toCoord(address));
+    const coord = toCoord(address);
+    return this.cells.has(coord) || this.spills.covers(coord);
   }
 
   get cellCount(): number {
     return this.cells.size;
   }
 
-  /** Bounding box of the occupied cells, or `null` when empty. */
+  /**
+   * Bounding box of everything the sheet shows, or `null` when empty.
+   *
+   * Spilled cells count: they are on the sheet, an export has to include them,
+   * and a viewport that stopped at the last typed cell would cut a block in
+   * half.
+   */
   extent(): RangeRef | null {
-    return this.cells.extent();
+    return unionExtent(this.cells.extent(), this.spills.extent());
   }
 
   /** A1 addresses of the cells this cell reads directly. */
@@ -865,8 +962,17 @@ export class Workbook {
     return plan.cycles.map((cycle) => cycle.map(addressOfId));
   }
 
-  /** Recompute every cell, in dependency order. */
+  /**
+   * Recompute every cell, in dependency order.
+   *
+   * Spills are dropped first rather than updated in place. A pass over the
+   * whole sheet is exactly the case where a block may have moved, shrunk or
+   * lost its formula entirely, and rebuilding from nothing is both simpler and
+   * the only way to be sure no cell is left covered by a block that no longer
+   * exists.
+   */
   recalculateAll(): void {
+    this.spills.clear();
     this.recalculateFrom([...this.cells.coords()]);
   }
 
@@ -1016,8 +1122,30 @@ export class Workbook {
     this.recalculateFrom(seeds);
   }
 
+  /**
+   * Recompute from a set of edits, then again from whatever the spills moved.
+   *
+   * One pass is enough for the graph's own edges, but not for spills: a block
+   * that grew or shrank has changed which cells hold anything, and a formula
+   * reading one of those cells has no edge to the block that covers it. Those
+   * cells are re-seeded and the pass repeats until nothing moves.
+   *
+   * The iteration is bounded. A sheet whose spill sizes chase each other in a
+   * loop has no fixed point to find, and grinding forever is worse than
+   * stopping with the sheet in the state the last pass left it.
+   */
   private recalculateFrom(seeds: readonly Coord[]): void {
-    recalculate(this.graph, seeds, {
+    let wave: readonly Coord[] = seeds;
+    for (let pass = 0; pass < MAX_SPILL_PASSES && wave.length > 0; pass++) {
+      this.spillTouched = [];
+      this.runRecalculation(wave);
+      wave = this.spillTouched;
+    }
+    this.spillTouched = [];
+  }
+
+  private runRecalculation(seeds: readonly Coord[]): void {
+    recalculate<CallResult>(this.graph, seeds, {
       evaluate: (coord) => this.evaluateCell(coord),
       cycleValue: (_coord, cycle) =>
         err(
@@ -1028,24 +1156,36 @@ export class Workbook {
             )
             .join(" -> ")}`,
         ),
-      write: (coord, value) => {
+      write: (coord, result) => {
         const record = this.cells.get(coord);
-        if (record !== undefined) record.value = value;
+        if (record === undefined) {
+          // A seed with no record is a cell a spill uncovered; there is
+          // nothing to store, but its dependents were still replanned.
+          this.spills.retract(coord);
+          return;
+        }
+        const placement = this.spills.place(coord, result, (target) =>
+          this.cells.has(target),
+        );
+        record.value = placement.value;
+        if (placement.touched.length > 0) {
+          this.spillTouched.push(...placement.touched);
+        }
       },
     });
   }
 
-  private evaluateCell(coord: Coord): Value {
+  private evaluateCell(coord: Coord): CallResult {
     const record = this.cells.get(coord);
     if (record === undefined) return null;
     if (record.ast === null) return record.literal;
-    return evaluate(record.ast, this.context);
+    return evaluateResult(record.ast, this.context);
   }
 
   private readRange(range: RangeRef): Value[] {
     const out: Value[] = [];
     for (const coord of iterateRange(range)) {
-      out.push(this.cells.get(coord)?.value ?? null);
+      out.push(this.valueAt(coord));
     }
     return out;
   }
