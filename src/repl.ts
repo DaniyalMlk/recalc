@@ -21,6 +21,7 @@ import { FormatCodeError, isGeneralFormat } from "./format/code.js";
 import {
   amortiseCommand,
   goalSeekCommand,
+  regressCommand,
   tableCommand,
 } from "./analysis/commands.js";
 import {
@@ -111,6 +112,14 @@ export const HELP = `
                             cross two inputs against one result
     .table B6 by B1 = 20..40/5 into D1
                             write the table into the sheet
+
+  ${paint(BOLD, "Regression")}
+    .regress B2:B12 by C2:C12
+                            fit one column against another
+    .regress E1:E11 by A1:D11
+                            several predictors at once
+    .regress B2:B12 by C2:C12 through zero
+                            with no intercept
 
   ${paint(BOLD, "Debt")}
     .amortise 250000 at 5.5%/12 over 360
@@ -701,6 +710,10 @@ function handle(
 
   if (line === ".amortise" || line.startsWith(".amortise ")) {
     return amortiseCommand(book, line.slice(9), INK);
+  }
+
+  if (line === ".regress" || line.startsWith(".regress ")) {
+    return regressCommand(book, line.slice(8), INK);
   }
 
   if (line === ".table" || line.startsWith(".table ")) {
