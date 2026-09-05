@@ -580,3 +580,59 @@ describe("exporting what the sheet shows", () => {
     expect(out).toContain("=A1*3");
   });
 });
+
+describe("blocks in the shell", () => {
+  const sheet = ["A1 = 1", "B1 = 2", "C1 = 3", "A2 = 4", "B2 = 5", "C2 = 6"];
+  const spilled = [...sheet, "E1 = =TRANSPOSE(A1:C2)"];
+
+  it("shows where a formula's block reaches", () => {
+    expect(one("E1 = =TRANSPOSE(A1:C2)", sheet)).toContain("E1:F3");
+  });
+
+  it("reports the region and its size", () => {
+    const out = one(".spill E1", spilled);
+    expect(out).toContain("E1:F3");
+    expect(out).toContain("3x2");
+    expect(out).toContain("TRANSPOSE(A1:C2)");
+  });
+
+  it("answers from a cell inside the block, naming the anchor", () => {
+    expect(one(".spill F3", spilled)).toContain("from E1");
+  });
+
+  it("says when a cell is not part of a block", () => {
+    expect(one(".spill A1", spilled)).toContain("not part of a block");
+  });
+
+  it("refuses a .spill on something that is not a cell", () => {
+    expect(one(".spill nonsense", spilled)).toContain("not a cell");
+  });
+
+  it("marks a spilled cell with the formula it came from", () => {
+    const out = one(".show E1:F3", spilled);
+    expect(out).toContain("spilled from E1");
+    expect(out.match(/spilled from E1/g)).toHaveLength(5);
+  });
+
+  it("lists spilled cells alongside entered ones", () => {
+    const out = one(".list", spilled);
+    expect(out).toContain("F3");
+  });
+
+  it("reports a block that has nowhere to land", () => {
+    const out = one("E1 = =TRANSPOSE(A1:C2)", [...sheet, "F2 = in the way"]);
+    expect(out).toContain("#SPILL!");
+    expect(out).toContain("F2");
+  });
+
+  it("clears the whole block when the formula goes", () => {
+    const out = run([...spilled, ".clear E1", ".show E1:F3"]).at(-1)!;
+    expect(out).toContain("(empty)");
+  });
+
+  it("builds a block out of nothing with SEQUENCE", () => {
+    const out = run(["A1 = =SEQUENCE(3,2)", ".spill B3"]).at(-1)!;
+    expect(out).toContain("A1:B3");
+    expect(out).toContain("3x2");
+  });
+});
