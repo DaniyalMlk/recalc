@@ -23,6 +23,8 @@ import {
 import type { OneWayTable, TwoWayTable } from "./table.js";
 import { ScheduleError, amortisationSchedule, writeSchedule } from "./amortisation.js";
 import type { Schedule } from "./amortisation.js";
+import { RegressionError, parseRegressCommand, summarise } from "./regression.js";
+import type { Summary } from "./regression.js";
 
 /** How the caller wants a line of output decorated. */
 export interface Ink {
@@ -468,4 +470,58 @@ function renderSchedule(schedule: Schedule, ink: Ink): string {
   const [first, ...rest] = lines;
   const last = rest.pop() ?? "";
   return [ink.ok(first ?? ""), ...rest, ink.dim(last)].join("\n");
+}
+
+export const REGRESS_USAGE = "usage: .regress B2:B12 by C2:F12 [through zero]";
+
+/**
+ * `.regress <y> by <x> [through zero]`
+ *
+ * A fit, laid out the way a summary is read rather than the way `LINEST`
+ * returns it: one line per term with its coefficient, standard error and t
+ * statistic, then the fit's own statistics underneath.
+ */
+export function regressCommand(
+  book: Workbook,
+  tail: string,
+  ink: Ink = PLAIN,
+): string {
+  const parsed = parseRegressCommand(tail);
+  if (typeof parsed === "string") return ink.bad(`  ${parsed}`);
+
+  try {
+    return renderSummary(
+      summarise(book, parsed.y, parsed.x, parsed.withIntercept),
+      ink,
+    );
+  } catch (error) {
+    if (error instanceof RegressionError) return ink.bad(`  ${error.message}`);
+    throw error;
+  }
+}
+
+function renderSummary(summary: Summary, ink: Ink): string {
+  const header = ["term", "coefficient", "std error", "t"];
+  const rows = summary.terms.map((term) => [
+    term.label,
+    short(term.coefficient),
+    short(term.standardError),
+    short(term.t),
+  ]);
+  const lines = grid([header, ...rows]);
+  const [first, ...rest] = lines;
+
+  // Adjusted R-squared beside the raw one, because the raw one can only go up
+  // as columns are added and on its own says nothing about whether they helped.
+  const stats = grid([
+    ["observations", String(summary.observations)],
+    ["predictors", String(summary.predictors)],
+    ["degrees of freedom", String(summary.df)],
+    ["r squared", short(summary.rSquared)],
+    ["adjusted r squared", short(summary.adjustedRSquared)],
+    ["standard error", short(summary.standardError)],
+    ["f", short(summary.f)],
+  ]).map((line) => ink.dim(line));
+
+  return [ink.ok(first ?? ""), ...rest, "", ...stats].join("\n");
 }

@@ -10,6 +10,8 @@ import "./date.js";
 import "./amortisation.js";
 import "./bonds.js";
 import "./arrays.js";
+import "./matrix.js";
+import "./regression.js";
 
 export * from "./registry.js";
 export { solveRate } from "./solver.js";

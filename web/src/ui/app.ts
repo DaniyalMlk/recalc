@@ -822,6 +822,12 @@ export class App {
     for (const entry of this.workbook.names()) {
       this.workbook.deleteName(entry.name);
     }
+    // Formats belong to the sheet being cleared, not to the empty one that
+    // replaces it. Leaving them behind makes the next number typed into a
+    // cleared cell arrive as a percentage of a sheet that is gone.
+    for (const entry of this.workbook.formatEntries()) {
+      this.workbook.clearFormat(entry.address);
+    }
     this.workbook.setCells(
       Object.fromEntries(
         Object.keys(this.workbook.toInputMap()).map((address) => [address, null]),

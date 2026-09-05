@@ -16,13 +16,15 @@ formula depends on, and recalculates only what an edit actually invalidated.
 ## Status
 
 Every phase in [ROADMAP.md](ROADMAP.md) is complete: the formula grammar, the
-reference model, the dependency graph, the evaluator, a function library of 141
-functions including financial, date, amortisation and bond packs, day-count
+reference model, the dependency graph, the evaluator, a function library of 158
+functions including financial, date, amortisation, bond, matrix and regression
+packs, day-count
 conventions, debt schedules, CSV interchange, named ranges, a
 benchmark harness, structural editing that rewrites every formula in the sheet
 when rows and columns move, block editing with fill, clipboard and undo, number
 formats that follow their cells through every one of those operations, array
-values that spill a formula's block across the sheet, what-if
+values that spill a formula's block across the sheet, dense linear algebra and
+least-squares regression, what-if
 analysis with goal seek, sensitivity tables and named scenarios, and a web
 interface where all of it is reachable from a virtualised grid — the analysis
 included.
@@ -370,6 +372,79 @@ The example sheet reaches its net present value twice, once through `NPV` and
 once by summing a discounted column built from two spilled blocks. The two
 agree to the cent, and the sheet says so.
 
+## Linear algebra and regression
+
+Blocks make the functions whose answer is a block reachable, and the ones worth
+having are the fitting ones.
+
+```
+=MMULT(A1:B2, D1:E2)          the matrix product, spilled
+=MINVERSE(A1:C3)              the inverse
+=MDETERM(A1:C3)               the determinant
+=MSOLVE(A1:C3, E1:E3)         A x = b, without forming the inverse
+=LINEST(E1:E11, A1:D11)       five coefficients across one row
+=LINEST(E1:E11, A1:D11, TRUE, TRUE)
+                              a 5x5 block: coefficients, standard errors,
+                              R-squared, the standard error of the estimate,
+                              F, degrees of freedom, both sums of squares
+=TREND(E1:E11, A1:D11, H1:K1) the fit evaluated at a new case
+=SLOPE / =INTERCEPT / =RSQ / =STEYX / =CORREL / =COVARIANCE.S
+```
+
+Two decompositions, chosen separately.
+
+**LU with partial pivoting backs the determinant, the inverse and the solve.**
+Those functions are *defined* as those quantities, and LU computes them
+directly. Pivoting is not optional: without it a perfectly well-conditioned
+matrix with a zero in the corner fails outright, and one with a merely small
+corner returns an answer with most of its digits gone.
+
+**Householder QR backs the fit, and that is a different tool on purpose.** A
+least-squares fit can be had from the normal equations in a few lines, and the
+price is that forming `XᵀX` squares the condition number of the design matrix:
+a regression on a column of years around 2000, or on any nearly collinear pair
+of predictors, loses roughly twice the digits it needs to. QR works on the
+design matrix itself and does not pay that. The standard errors come from the
+same factorisation — the diagonal of `(XᵀX)⁻¹` is read off `R⁻¹` rather than by
+inverting `XᵀX`, for exactly the same reason.
+
+**A pivot is never tested against zero.** Elimination on a matrix that is
+singular by inspection leaves a final pivot around `1e-16` rather than `0`, so
+an exact test calls it invertible and then divides by rounding error. The
+threshold scales with the size of the matrix and the size of the numbers in it,
+which is what makes it mean the same thing for a matrix of units and a matrix
+of millions.
+
+Every regression function runs through one fit. `SLOPE`, `LINEST`, `TREND`,
+`RSQ` and `STEYX` are five views of one computation rather than five
+re-derivations, which is why the tests can check them against each other and
+expect exact agreement rather than approximate.
+
+From the shell, `.regress` lays the same fit out the way a summary is read
+rather than the way `LINEST` returns it:
+
+```
+recalc> .regress E1:E11 by A1:D11
+       term  coefficient  std error           t
+  intercept    52317.831  12237.362   4.2752541
+          A    27.641387   5.429374   5.0910818
+          B    12529.768  400.06684   31.319187
+          C    2553.2107  530.66915   4.8113041
+          D   -234.23716  13.268011  -17.654278
+
+        observations          11
+          predictors           4
+  degrees of freedom           6
+           r squared  0.99674799
+  adjusted r squared  0.99457999
+      standard error   970.57846
+                   f   459.75367
+```
+
+Adjusted R-squared sits beside the raw one because the raw one can only go up
+as columns are added, and on its own says nothing about whether the column was
+worth including.
+
 ## What-if analysis
 
 A model's single number is the least interesting thing about it. The two
@@ -616,7 +691,8 @@ for number formats `.format B2:B13 = #,##0.00`, `.format B2`, `.formats`; for
 what-if `.goalseek B6 = 0 by B1 [apply]` and
 `.table B6 by B1 = 20..40/5 [x B2 = 500..2000/4] [into D1]`; for scenarios
 `.scenario Base = B1:B3`, `.scenario Down = B1=25`, `.scenarios`,
-`.apply Down`, `.unscenario Down`, `.summary B6:B8`; and for CSV
+`.apply Down`, `.unscenario Down`, `.summary B6:B8`; for a fit
+`.regress E1:E11 by A1:D11 [through zero]`; and for CSV
 `.csv [formulas|display]`, `.import data.csv [A1]`,
 `.export out.csv [formulas|display]`.
 
@@ -706,6 +782,18 @@ worked examples rather than against their own output:
 - `STDEV.P` over {2,4,4,4,5,5,7,9} is exactly 2, and variance stays accurate on
   values around 100,000,000 with a spread of 1, where the one-pass formula
   collapses.
+- `LINEST` reproduces every figure of the published multiple-regression worked
+  example — a valuation of eleven office buildings on four predictors: five
+  coefficients, five standard errors, R-squared, the standard error of the
+  estimate, F, degrees of freedom and both sums of squares.
+- `MINVERSE(A)` multiplied back by `A` gives the identity, and `MDETERM` matches
+  cofactor expansion, is multiplicative, and changes sign on a row swap.
+- The pack is checked against itself where it is supposed to agree exactly:
+  `LINEST` on one predictor equals `SLOPE` and `INTERCEPT`, `RSQ` equals
+  `CORREL` squared, the two sums of squares add to the total, and `F` is the
+  ratio the degrees of freedom imply.
+- The QR fit recovers a slope of exactly 0.25 from a design matrix of years
+  around 2000, where the normal equations would lose most of their digits.
 
 **A named range is expanded into the graph, not resolved at evaluation time.**
 If `Revenue` is `B2:B13`, then editing `B7` has to recalculate everything that
@@ -849,8 +937,16 @@ than a wait.
   one value is `#VALUE!` rather than a silent pick from the calling row.
 - A block cannot be entered over a range the way a legacy array formula was.
   Spilling from a single anchor is the only form.
-- `SORT`, `FILTER` and `UNIQUE` are not implemented; the block functions are
-  `SEQUENCE`, `TRANSPOSE`, `TOROW` and `TOCOL`.
+- `SORT`, `FILTER` and `UNIQUE` are not implemented; the block-producing
+  functions are `SEQUENCE`, `TRANSPOSE`, `TOROW`, `TOCOL` and the matrix and
+  regression packs.
+- `LINEST` refuses linearly dependent predictors rather than dropping columns
+  to the rank of the design matrix, which is what a rank-revealing
+  factorisation would allow.
+- There is no t or F distribution, so `.regress` reports each t statistic and
+  the F but not a p value for either.
+- `LOGEST` and `GROWTH`, the exponential counterparts of `LINEST` and `TREND`,
+  are not implemented.
 - Omitted arguments (`IF(A1,,2)`) are a parse error.
 - Only one sheet; there are no cross-sheet references.
 - Scenarios are not serialised: they live for the length of a session, and CSV

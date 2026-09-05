@@ -14,6 +14,7 @@ import type {
   CommandId,
 } from "../web/src/core/commands.js";
 import type { CellRect } from "../web/src/core/selection.js";
+import { Workbook } from "../src/engine/workbook.js";
 
 const rect = (
   top: number,
@@ -146,5 +147,26 @@ describe("historyCommands", () => {
     );
     expect(find(commands, "redo").label).toBe("Redo paste");
     expect(find(commands, "redo").hint).toBe("Ctrl+Shift+Z");
+  });
+});
+
+describe("clearing the sheet", () => {
+  it("takes the formats with it", () => {
+    const book = new Workbook();
+    book.setCell("B3", 0.11);
+    book.setFormat("B3:B4", "0.0%");
+    expect(book.formatEntries()).toHaveLength(2);
+
+    // The same two steps the toolbar's Clear sheet performs.
+    for (const entry of book.formatEntries()) book.clearFormat(entry.address);
+    book.setCells(
+      Object.fromEntries(
+        Object.keys(book.toInputMap()).map((address) => [address, null]),
+      ),
+    );
+
+    expect(book.formatEntries()).toEqual([]);
+    book.setCell("B3", 3);
+    expect(book.getDisplay("B3")).toBe("3");
   });
 });
