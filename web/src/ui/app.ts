@@ -266,6 +266,7 @@ export class App {
         text: display.text,
         kind: display.kind,
         isFormula: this.workbook.getFormula(address) !== null,
+        isSpilled: this.workbook.isSpilled(address),
         colour: null,
       };
     }
@@ -274,6 +275,7 @@ export class App {
       text: formatted.text,
       kind,
       isFormula: this.workbook.getFormula(address) !== null,
+      isSpilled: this.workbook.isSpilled(address),
       colour: formatted.colour === null ? null : `--format-${formatted.colour}`,
     };
   }
@@ -309,17 +311,44 @@ export class App {
     const address = this.address(active);
 
     this.grid.setSelection(this.selection.rect, active);
+    this.grid.setSpill(this.spillRect(address));
     this.grid.reveal(reveal);
     this.el.addressBox.textContent = this.describeSelection(address);
 
     if (this.editing === null) {
-      this.setFormulaText(this.workbook.getInput(address));
-      this.el.formulaNote.textContent = "";
+      // A spilled cell has no input; showing the anchor's formula in the bar
+      // would invite editing it in the wrong place, so the bar stays empty and
+      // the note says where the value came from.
+      const anchor = this.workbook.spillAnchorOf(address);
+      const spilled = anchor !== null && anchor !== address;
+      this.setFormulaText(spilled ? "" : this.workbook.getInput(address));
+      this.setNote(spilled ? `spilled from ${anchor}` : "", "info");
     }
 
     this.inspector.render(this.workbook, active);
     this.updateStatus();
     this.refreshToolbar();
+  }
+
+  /** Put a line in the slot beside the formula bar, error-coloured or not. */
+  private setNote(text: string, tone: "info" | "error"): void {
+    this.el.formulaNote.textContent = text;
+    this.el.formulaNote.classList.toggle(
+      "formulabar__note--info",
+      tone === "info",
+    );
+  }
+
+  /** The block the selected cell belongs to, as a rectangle to outline. */
+  private spillRect(address: string): CellRect | null {
+    const region = this.workbook.spillRegionOf(address);
+    if (region === null) return null;
+    return {
+      top: region.start.row,
+      left: region.start.col,
+      bottom: region.end.row,
+      right: region.end.col,
+    };
   }
 
   private describeSelection(address: string): string {
@@ -423,7 +452,7 @@ export class App {
       this.workbook.setCell(address, editing.buffer);
     } catch (error) {
       if (error instanceof ParseError) {
-        this.el.formulaNote.textContent = error.message;
+        this.setNote(error.message, "error");
         return false;
       }
       throw error;
@@ -452,7 +481,7 @@ export class App {
     this.highlight = null;
     this.el.cellInput.hidden = true;
     this.el.cellInput.value = "";
-    this.el.formulaNote.textContent = "";
+    this.setNote("", "info");
     this.grid.setHighlight(null);
     this.el.body.focus();
   }
@@ -461,7 +490,7 @@ export class App {
     const highlight = highlightFormula(text);
     this.highlight = highlight;
     this.grid.setHighlight(text.startsWith("=") ? highlight : null);
-    this.el.formulaNote.textContent = highlight.error ?? "";
+    this.setNote(highlight.error ?? "", "error");
     this.paintInk(highlight);
   }
 

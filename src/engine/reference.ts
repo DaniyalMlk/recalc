@@ -185,8 +185,19 @@ export function rangeContains(range: RangeRef, coord: Coord): boolean {
 
 /** Cell count of a range. */
 export function rangeSize(range: RangeRef): number {
+  return rangeHeight(range) * rangeWidth(range);
+}
+
+/** Row count of a range. */
+export function rangeHeight(range: RangeRef): number {
   const r = normalizeRange(range);
-  return (r.end.col - r.start.col + 1) * (r.end.row - r.start.row + 1);
+  return r.end.row - r.start.row + 1;
+}
+
+/** Column count of a range. */
+export function rangeWidth(range: RangeRef): number {
+  const r = normalizeRange(range);
+  return r.end.col - r.start.col + 1;
 }
 
 /** Iterate a range in row-major order. */

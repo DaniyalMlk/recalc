@@ -23,6 +23,12 @@
   --accent-deep: #1a5142;
   --accent-soft: rgba(31, 95, 78, 0.1);
   --accent-line: rgba(31, 95, 78, 0.35);
+  /*
+   * The wash on a cell the engine computed rather than a person typed. Far too
+   * weak to compete with the digits, and the same for a formula's own cell and
+   * for one a block spilled into, because they are the same fact.
+   */
+  --computed-tint: rgba(31, 95, 78, 0.035);
 
   --danger: #9f2f2d;
   --danger-soft: #fbeae9;
@@ -381,6 +387,11 @@ body {
 .tok-ref-4 { color: var(--ref-4); }
 .tok-ref-5 { color: var(--ref-5); }
 
+/*
+ * The slot to the right of the formula bar. It carries a parse error most of
+ * the time, hence the default colour, but it also states plain facts about the
+ * selection, and those must not be dressed up as failures.
+ */
 .formulabar__note {
   display: flex;
   align-items: center;
@@ -388,6 +399,10 @@ body {
   font-size: 11.5px;
   color: var(--danger);
   white-space: nowrap;
+}
+
+.formulabar__note--info {
+  color: var(--ink-soft);
 }
 
 /* ---------------------------------------------------------------- sheet -- */
@@ -610,10 +625,25 @@ body {
  * columns separate from the entered ones at a glance.
  */
 .cell--formula {
-  background: rgba(31, 95, 78, 0.035);
+  background: var(--computed-tint);
 }
 
 .cell--formula.cell--error {
+  background: var(--danger-soft);
+}
+
+/*
+ * A spilled cell: a value that arrived from a formula somewhere else.
+ *
+ * It gets the same faint computed tint as a formula cell, because that is what
+ * it is, and nothing more. The block as a whole is what needs a boundary, and
+ * that is drawn once around the region rather than four times per cell.
+ */
+.cell--spilled {
+  background: var(--computed-tint);
+}
+
+.cell--spilled.cell--error {
   background: var(--danger-soft);
 }
 
@@ -642,6 +672,17 @@ body {
   border: 1.5px dashed var(--accent);
   border-radius: 2px;
   background: rgba(31, 95, 78, 0.04);
+}
+
+/*
+ * The block the selection sits inside. Drawn only while the selection is in
+ * it, so a sheet full of blocks is not a sheet full of boxes: the boundary is
+ * shown at the moment it matters, which is when the next keystroke might
+ * displace the whole thing.
+ */
+.mark--spill {
+  border: 1px solid var(--accent-line);
+  border-radius: 2px;
 }
 
 .mark--ref {

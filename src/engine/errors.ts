@@ -15,6 +15,7 @@ export const ERROR_CODES = [
   "#NAME?",
   "#NUM!",
   "#N/A",
+  "#SPILL!",
   "#CYCLE!",
 ] as const;
 
@@ -62,6 +63,16 @@ export const NAME_ERROR = err("#NAME?");
 export const NUM_ERROR = err("#NUM!");
 /** `#N/A` — a lookup with no match. */
 export const NA_ERROR = err("#N/A");
+/**
+ * `#SPILL!` — a result needs more room than it has.
+ *
+ * A formula whose answer is a block writes into the cells around the one it
+ * was entered in, and it is only allowed to do that where those cells are
+ * empty. Overwriting them would destroy data the user typed, and silently
+ * truncating the result would report a wrong answer, so the formula reports
+ * that it could not land instead.
+ */
+export const SPILL_ERROR = err("#SPILL!");
 /**
  * `#CYCLE!` — the cell participates in a circular reference.
  *

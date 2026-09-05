@@ -156,3 +156,14 @@ tree green and the public API usable.
 - [x] `ACCRINT` and `ACCRINTM`
 - [x] `DURATION` and `MDURATION`, checked against the price move they predict
 - [x] Every published worked example reproduced in the test suite
+
+## Phase 19 — Array values and spilling
+
+- [x] A matrix value with a shape, kept out of `Value` so storage and formats stay scalar
+- [x] An array argument beside scalar and range, so every existing function accepts one unchanged
+- [x] Elementwise broadcasting for the operators, a length of one stretching and anything else refused
+- [x] Spilling: the anchor keeps the formula, the rest of the block is derived and unjournalled
+- [x] `#SPILL!` naming the cell in the way, writing nothing, and retried when the way is cleared
+- [x] Re-seeding on a changed footprint, since a block's size is not an edge in the graph
+- [x] `SEQUENCE`, `TRANSPOSE`, `TOROW`, `TOCOL` and the shape functions
+- [x] `.spill` in the shell, and a block outlined in the grid with its origin named

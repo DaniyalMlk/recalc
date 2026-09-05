@@ -16,12 +16,13 @@ formula depends on, and recalculates only what an edit actually invalidated.
 ## Status
 
 Every phase in [ROADMAP.md](ROADMAP.md) is complete: the formula grammar, the
-reference model, the dependency graph, the evaluator, a function library of 135
+reference model, the dependency graph, the evaluator, a function library of 141
 functions including financial, date, amortisation and bond packs, day-count
 conventions, debt schedules, CSV interchange, named ranges, a
 benchmark harness, structural editing that rewrites every formula in the sheet
 when rows and columns move, block editing with fill, clipboard and undo, number
-formats that follow their cells through every one of those operations, what-if
+formats that follow their cells through every one of those operations, array
+values that spill a formula's block across the sheet, what-if
 analysis with goal seek, sensitivity tables and named scenarios, and a web
 interface where all of it is reachable from a virtualised grid — the analysis
 included.
@@ -316,6 +317,59 @@ payment is discounted at simple interest, which is the convention every last
 coupon period is quoted on. The two rules agree at the boundary, which is a
 test.
 
+## Blocks and spilling
+
+Every function returned one value, which put a ceiling on what could be
+written. `TRANSPOSE` had nowhere to put its answer, `A1:A3*2` was a `#VALUE!`
+rather than three results, and a regression could produce a slope or an
+intercept but never both. So a formula may now produce a block, and the sheet
+lays it down across the cells below and to the right of the one it was entered
+in.
+
+```
+=SEQUENCE(3)              in E1  ->  1, 2, 3 down E1:E3
+=TRANSPOSE(A1:C2)         in E1  ->  the 2x3 range as a 3x2 block in E1:F3
+=A1:A3*2                  in E1  ->  each of the three doubled, down E1:E3
+=1/(1+Rate)^SEQUENCE(7,1,0,1)  ->  a whole discount curve from one formula
+```
+
+Only the anchor holds a formula. The rest of the block is derived: nothing was
+typed into those cells, they carry no input, and none of them appears in the
+edit history — so undoing the edit that created a block simply does not
+recompute it, rather than having to unwind seven cells one at a time.
+
+Three things the implementation is careful about.
+
+**A block that does not fit writes nothing.** If any cell it needs is occupied,
+the formula reports `#SPILL!` and names the cell in the way. The two
+alternatives are both worse: overwriting destroys data the user typed, and
+truncating the result to the space available reports a different answer from the
+one that was computed. Clearing the obstruction makes the block appear without
+the formula being touched, which needs a little machinery — a refused block
+leaves no trace on the sheet, so nothing links it to its obstruction and the
+dependency graph cannot walk from one to the other. The short list of refused
+anchors is kept and retried on any edit.
+
+**A block's footprint is not an edge in the graph.** A formula reading `C3` has
+a dependency on `C3`, but whether `C3` holds anything at all can depend on the
+*size* of a block three columns away — and that size is only known once the
+block has been computed. One recalculation pass cannot see this. So a pass
+records every cell a block covered or uncovered, and those cells are fed back as
+a second wave of seeds; the pass repeats until nothing moves, bounded so a sheet
+whose block sizes chase each other stops rather than grinding.
+
+**The operators broadcast, and the shape rule is the whole of it.** A dimension
+of one stretches to meet the other side and anything else is refused, so
+`A1:A3*2` is elementwise and a 3x1 column against a 1x4 row gives the 3x4 outer
+shape. Shapes that do not combine give one `#VALUE!` naming both, rather than a
+plausible-looking grid padded with `#N/A` — padding hides the mistake inside the
+answer. Where a single value is genuinely required, a block is still an error:
+`ROUND(A1:A3, 0)` has nowhere to put three results.
+
+The example sheet reaches its net present value twice, once through `NPV` and
+once by summing a discounted column built from two spilled blocks. The two
+agree to the cent, and the sheet says so.
+
 ## What-if analysis
 
 A model's single number is the least interesting thing about it. The two
@@ -478,6 +532,14 @@ row or column header selects the line; right-clicking one offers to insert or
 delete it, with the menu naming what it would do to the current selection rather
 than in the abstract.
 
+A formula whose answer is a block spills it across the cells beside it, and the
+grid says so: the block is outlined while the selection is anywhere inside it,
+its cells carry the same faint wash as any other computed cell, and selecting
+one leaves the formula bar empty rather than inviting an edit in the wrong
+place — the note beside it names the cell the value came from, and the
+inspector makes that a chip you can click. The example sheet ships with two
+blocks, a discount curve and a discounted cash flow column, each written once.
+
 The **Format** menu applies a number format to the selection. Each choice is
 previewed against the number in the selected cell rather than against a stock
 figure, because "Millions" means nothing beside a capital outlay until it reads
@@ -545,7 +607,7 @@ recalc> B6
 ```
 
 `.help` lists the commands: `.list`, `.show A1:C9`, `.prec`, `.deps`, `.plan`,
-`.cycles`, `.fns`, `.help FN`, `.demo`, `.clear`, `.reset`; for names
+`.cycles`, `.spill A1`, `.fns`, `.help FN`, `.demo`, `.clear`, `.reset`; for names
 `.name Revenue = B2:B13`, `.names`, `.unname Revenue`; for blocks
 `.filldown B1:B9`, `.fillright B2:F2`, `.copy A1:C3`, `.paste D5`, `.undo`,
 `.redo`; for rows and columns
@@ -783,8 +845,12 @@ than a wait.
 ## Known gaps
 
 - No CI is configured, so the suite and the benchmark run locally only.
-- Implicit intersection is not implemented: a multi-cell range in a scalar
-  position is `#VALUE!` rather than a silent pick from the calling row.
+- Implicit intersection is not implemented. A block in a position that needs
+  one value is `#VALUE!` rather than a silent pick from the calling row.
+- A block cannot be entered over a range the way a legacy array formula was.
+  Spilling from a single anchor is the only form.
+- `SORT`, `FILTER` and `UNIQUE` are not implemented; the block functions are
+  `SEQUENCE`, `TRANSPOSE`, `TOROW` and `TOCOL`.
 - Omitted arguments (`IF(A1,,2)`) are a parse error.
 - Only one sheet; there are no cross-sheet references.
 - Scenarios are not serialised: they live for the length of a session, and CSV
