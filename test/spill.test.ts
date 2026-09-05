@@ -337,3 +337,47 @@ describe("blocks and formats", () => {
     expect(book.extent()).not.toBeNull();
   });
 });
+
+describe("what the sample sheet proves", () => {
+  it("reaches the same present value through a block as through NPV", () => {
+    const book = new Workbook();
+    book.setCells({
+      B3: "0.11",
+      G7: "-2400000",
+      G8: "95600",
+      G9: "395900",
+      G10: "636200",
+      G11: "874900",
+      G12: "1013500",
+      G13: "1098200",
+    });
+    book.defineName("DiscountRate", "B3");
+    book.defineName("CashFlow", "G7:G13");
+
+    // One formula for the whole discount curve, one for the whole discounted
+    // column, and the two paths have to meet.
+    book.setCell("I7", "=1/(1+DiscountRate)^SEQUENCE(7,1,0,1)");
+    book.setCell("J7", "=CashFlow*I7:I13");
+    book.setCell("B15", "=NPV(DiscountRate,G8:G13)+G7");
+    book.setCell("B22", "=SUM(J7:J13)");
+
+    expect(book.getValue("I7")).toBe(1);
+    expect(book.getValue("I8")).toBeCloseTo(1 / 1.11, 12);
+    expect(book.getValue("J8")).toBeCloseTo(95600 / 1.11, 8);
+    expect(book.getValue("B22") as number).toBeCloseTo(
+      book.getValue("B15") as number,
+      6,
+    );
+  });
+
+  it("moves the whole curve when the discount rate changes", () => {
+    const book = new Workbook();
+    book.setCell("B3", "0.1");
+    book.defineName("DiscountRate", "B3");
+    book.setCell("I7", "=1/(1+DiscountRate)^SEQUENCE(3,1,0,1)");
+    expect(book.getValue("I9")).toBeCloseTo(1 / 1.21, 12);
+
+    book.setCell("B3", "0.2");
+    expect(book.getValue("I9")).toBeCloseTo(1 / 1.44, 12);
+  });
+});

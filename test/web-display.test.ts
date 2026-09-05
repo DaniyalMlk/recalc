@@ -98,3 +98,11 @@ describe("charsForWidth", () => {
     expect(charsForWidth(0)).toBe(1);
   });
 });
+
+describe("a spilled value in a cell", () => {
+  it("shows #SPILL! as an error like any other code", () => {
+    const display = displayValue(err("#SPILL!", "C2 is not empty"));
+    expect(display.text).toBe("#SPILL!");
+    expect(display.kind).toBe("error");
+  });
+});
