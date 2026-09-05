@@ -180,9 +180,17 @@ describe("named ranges in a workbook", () => {
     expect(book.getValue("D1")).toBe(14);
   });
 
-  it("is #VALUE! when a multi-cell name lands in scalar position", () => {
+  it("broadcasts an operator over a multi-cell name", () => {
     const book = model();
     book.setCell("D1", "=Revenue+1");
+    expect([book.getValue("D1"), book.getValue("D2"), book.getValue("D3")]).toEqual([
+      101, 251, 401,
+    ]);
+  });
+
+  it("is #VALUE! when a multi-cell name lands where one value is required", () => {
+    const book = model();
+    book.setCell("D1", "=ROUND(Revenue,0)");
     expect(book.getDisplay("D1")).toBe("#VALUE!");
   });
 

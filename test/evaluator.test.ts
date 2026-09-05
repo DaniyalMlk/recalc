@@ -165,8 +165,19 @@ describe("references and ranges", () => {
     expect(evaluate("=$A$1+A1+$A1+A$1", { A1: 1 })).toBe(4);
   });
 
-  it("refuses a multi-cell range in a scalar position", () => {
-    expect(display("=A1:A3+1", { A1: 1, A2: 2, A3: 3 })).toBe("#VALUE!");
+  it("broadcasts an operator across a multi-cell range", () => {
+    // The result is a block now, not an error: the cell holds the first of the
+    // three results and the other two spill below it.
+    const book = new Workbook();
+    book.setCells({ A1: 1, A2: 2, A3: 3 });
+    book.setCell("C1", "=A1:A3+1");
+    expect([book.getValue("C1"), book.getValue("C2"), book.getValue("C3")]).toEqual([
+      2, 3, 4,
+    ]);
+  });
+
+  it("still refuses a block where a single value is required", () => {
+    expect(display("=ROUND(A1:A3+1,0)", { A1: 1, A2: 2, A3: 3 })).toBe("#VALUE!");
   });
 
   it("collapses a one-cell range to its value", () => {
