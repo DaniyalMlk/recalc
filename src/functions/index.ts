@@ -12,6 +12,7 @@ import "./bonds.js";
 import "./arrays.js";
 import "./matrix.js";
 import "./regression.js";
+import "./distributions.js";
 
 export * from "./registry.js";
 export { solveRate } from "./solver.js";

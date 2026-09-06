@@ -445,6 +445,69 @@ Adjusted R-squared sits beside the raw one because the raw one can only go up
 as columns are added, and on its own says nothing about whether the column was
 worth including.
 
+## Statistical distributions
+
+Eleven families, and underneath them two integrals.
+
+```
+=NORM.DIST(x, mean, sd, cumulative)     =NORM.INV(p, mean, sd)
+=NORM.S.DIST(z, cumulative)             =NORM.S.INV(p)
+=T.DIST(t, df, cumulative)              =T.INV(p, df)
+=T.DIST.RT(t, df)                       =T.INV.2T(p, df)
+=T.DIST.2T(t, df)
+=CHISQ.DIST(x, df, cumulative)          =CHISQ.INV(p, df)
+=CHISQ.DIST.RT(x, df)                   =CHISQ.INV.RT(p, df)
+=F.DIST(x, df1, df2, cumulative)        =F.INV(p, df1, df2)
+=F.DIST.RT(x, df1, df2)                 =F.INV.RT(p, df1, df2)
+=GAMMA.DIST / =GAMMA.INV / =GAMMA / =GAMMALN
+=BETA.DIST / =BETA.INV                  (optionally over an interval)
+=LOGNORM.DIST / =LOGNORM.INV / =EXPON.DIST / =WEIBULL.DIST
+=BINOM.DIST / =BINOM.INV / =POISSON.DIST
+=HYPGEOM.DIST / =NEGBINOM.DIST
+=PHI / =GAUSS / =STANDARDIZE
+```
+
+**Every family is written on the same two special functions.** The regularised
+incomplete gamma `P(a, x)` carries the normal, chi-squared, gamma, Poisson and
+exponential; the regularised incomplete beta `Iₓ(a, b)` carries Student's t, F,
+beta, binomial and negative binomial. That is not economy for its own sake. It
+is the only arrangement in which the identities between the families hold to
+the last bit rather than to the accuracy of eleven separate approximations:
+`F.DIST.RT(t², 1, v)` is *exactly* `T.DIST.2T(t, v)` here, and
+`CHISQ.DIST(z², 1)` is exactly `2·NORM.S.DIST(z) − 1`, because both sides are
+the same call.
+
+**Each integral is evaluated by whichever expansion converges where the
+argument lies.** The series for `P(a, x)` loses every digit it has to
+cancellation once `x` is much larger than `a`; the continued fraction stalls
+for small `x`. The crossover at `x = a + 1` puts each comfortably inside its
+own region. The number of terms the series needs grows like `√a`, so its
+iteration cap grows with it — a fixed cap does not fail on exotic input, it
+fails silently in the *middle* of a large distribution, and returns a partial
+sum that still looks like a probability.
+
+**A right tail is computed as a right tail.** `T.DIST.RT`, `CHISQ.DIST.RT` and
+`F.DIST.RT` are not `1 −` the cumulative. For `t = 30` on a hundred degrees of
+freedom the answer is `4.2e-52`, the cumulative is one to every bit a double
+has, and the subtraction gives exactly zero. The same applies in reverse to the
+inverses: `CHISQ.INV.RT(1e-10, 10)` inverts the survival function directly,
+because `1 − 1e-10` is a double that pins the tail down to seven digits rather
+than sixteen.
+
+**And where a caller knows a complement exactly, it passes it.** Student's t
+reaches the incomplete beta at `x = v / (v + t²)`, whose complement is
+`t² / (v + t²)` — the same two numbers, divided the other way. Letting the
+function recover `1 − x` by subtraction instead throws that away: at `t = 0.0125`
+on a million degrees of freedom, `x` is `1 − 1.6e-10`, and a double stores it
+with sixteen digits of absolute room, leaving six in the part that carries all
+the information. So the complement is a parameter, and nothing is ever
+reconstructed.
+
+Densities are computed in logs and exponentiated once, which is what keeps
+`BINOM.DIST(500000, 1000000, 0.5, FALSE)` — a coefficient far past the largest
+double, multiplied by two vanishing powers — representable at every step on the
+way to an answer near `8e-4`.
+
 ## What-if analysis
 
 A model's single number is the least interesting thing about it. The two
@@ -794,6 +857,21 @@ worked examples rather than against their own output:
   ratio the degrees of freedom imply.
 - The QR fit recovers a slope of exactly 0.25 from a design matrix of years
   around 2000, where the normal equations would lose most of their digits.
+- The distributions are checked against published critical values — the whole
+  95% and 99% rows of the t, chi-squared and F tables — and against the closed
+  forms they collapse to: `P(1, x)` is `1 − e⁻ˣ`, t at one degree of freedom is
+  the Cauchy, chi-squared at two is the exponential, and the gamma at shape one
+  is the exponential again.
+- Every quantile round-trips through its own cumulative across fourteen decades
+  of probability, from `1e-14` to `1 − 1e-3`, to better than `1e-9` relative —
+  including a chi-squared on a million degrees of freedom, where a fixed
+  iteration cap silently returns a partial sum instead.
+- The discrete families are checked against exact arithmetic: the binomial
+  against the longhand sum for every `k` at four parameter settings, the
+  hypergeometric against the ratio of binomial coefficients written out, and
+  each cumulative against the running total of its own density.
+- Two hundred values across eight distributions agree with an independent
+  implementation to `5e-12` relative or better.
 
 **A named range is expanded into the graph, not resolved at evaluation time.**
 If `Revenue` is `B2:B13`, then editing `B7` has to recalculate everything that
