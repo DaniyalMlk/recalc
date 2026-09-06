@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PLAIN, regressCommand } from "../src/analysis/commands.js";
 import { parseRegressCommand, summarise } from "../src/analysis/regression.js";
 import { parseA1Range } from "../src/engine/reference.js";
+import { fSf, studentTTwoTail } from "../src/numeric/distributions.js";
 import { Workbook } from "../src/engine/workbook.js";
 
 const OFFICES: readonly (readonly number[])[] = [
@@ -116,6 +117,50 @@ describe("the summary", () => {
     expect(summary.f).toBeCloseTo(459.7536742, 4);
   });
 
+  it("reports a p value that is the t distribution applied to its own t", () => {
+    const summary = summarise(
+      officeSheet(),
+      parseA1Range("E1:E11"),
+      parseA1Range("A1:D11"),
+    );
+    for (const term of summary.terms) {
+      expect(term.p).toBeCloseTo(studentTTwoTail(term.t, summary.df), 14);
+    }
+    // The published figures, on six degrees of freedom.
+    const [intercept, a, b, c, d] = summary.terms;
+    expect(intercept!.p).toBeCloseTo(0.005232793765238418, 15);
+    expect(a!.p).toBeCloseTo(0.0022409623812149203, 15);
+    expect(b!.p).toBeCloseTo(7.038631114196421e-8, 18);
+    expect(c!.p).toBeCloseTo(0.0029662818035409984, 15);
+    expect(d!.p).toBeCloseTo(2.1206104169678327e-6, 17);
+  });
+
+  it("reports a significance for the F over the right degrees of freedom", () => {
+    const summary = summarise(
+      officeSheet(),
+      parseA1Range("E1:E11"),
+      parseA1Range("A1:D11"),
+    );
+    expect(summary.significanceF).toBeCloseTo(
+      fSf(summary.f, summary.predictors, summary.df),
+      15,
+    );
+    expect(summary.significanceF).toBeCloseTo(1.37231468994613e-7, 18);
+  });
+
+  it("makes a single predictor's p value the two-tailed t of its own", () => {
+    // With one predictor the F test and the t test on the slope are the same
+    // question, and F is the square of t, so the two probabilities agree.
+    const summary = summarise(
+      officeSheet(),
+      parseA1Range("E1:E11"),
+      parseA1Range("B1:B11"),
+    );
+    const slope = summary.terms[1]!;
+    expect(summary.significanceF).toBeCloseTo(slope.p, 14);
+    expect(summary.f).toBeCloseTo(slope.t * slope.t, 6);
+  });
+
   it("adjusts R squared downwards for the predictors spent", () => {
     const summary = summarise(
       officeSheet(),
@@ -161,6 +206,17 @@ describe("what the command prints", () => {
     expect(lines[1]).toContain("intercept");
     expect(out).toContain("52317.831");
     expect(out).toContain("r squared");
+  });
+
+  it("prints the p column and the significance of the fit", () => {
+    const out = run(officeSheet(), "E1:E11 by A1:D11");
+    const header = out.split("\n")[0]!;
+    expect(header.trimEnd().endsWith("p")).toBe(true);
+    expect(out).toContain("significance f");
+    // A readable probability, not eight significant figures of one.
+    expect(out).toContain("0.005233");
+    // And a small one keeps its magnitude rather than printing as zero.
+    expect(out).toMatch(/7\.04e-8/);
   });
 
   it("labels each predictor by the column it came from", () => {
