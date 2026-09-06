@@ -636,3 +636,52 @@ describe("blocks in the shell", () => {
     expect(out).toContain("3x2");
   });
 });
+
+describe(".ttest in the shell", () => {
+  const data = [
+    "A1 = 3", "A2 = 4", "A3 = 5", "A4 = 8", "A5 = 9",
+    "B1 = 6", "B2 = 19", "B3 = 3", "B4 = 2", "B5 = 14",
+  ];
+
+  it("runs a comparison and reports the pieces of it", () => {
+    const out = one(".ttest A1:A5 vs B1:B5", data);
+    expect(out).toContain("difference in means");
+    expect(out).toContain("degrees of freedom");
+    expect(out).toContain("welch, two-tailed");
+  });
+
+  it("takes the kind and the tail count as words", () => {
+    expect(one(".ttest A1:A5 vs B1:B5 paired", data)).toContain(
+      "paired, two-tailed",
+    );
+    expect(one(".ttest A1:A5 vs B1:B5 pooled one-tailed", data)).toContain(
+      "pooled, one-tailed",
+    );
+  });
+
+  it("shows its usage when given nothing", () => {
+    expect(one(".ttest", data)).toContain("usage");
+  });
+
+  it("refuses a paired test on ranges of different lengths", () => {
+    expect(one(".ttest A1:A5 vs B1:B4 paired", data)).toContain("same count");
+  });
+
+  it("is listed in the help text", () => {
+    const help = one(".help");
+    expect(help).toContain(".ttest");
+  });
+});
+
+describe("the regression summary in the shell", () => {
+  const data = [
+    "A1 = 1", "A2 = 2", "A3 = 3", "A4 = 4", "A5 = 5", "A6 = 6",
+    "B1 = 2.1", "B2 = 3.9", "B3 = 6.2", "B4 = 7.8", "B5 = 10.1", "B6 = 12.2",
+  ];
+
+  it("carries a p column and a significance for the fit", () => {
+    const out = one(".regress B1:B6 by A1:A6", data);
+    expect(out.split("\n")[0]).toContain("p");
+    expect(out).toContain("significance f");
+  });
+});
