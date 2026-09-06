@@ -286,18 +286,43 @@ function betaContinuedFraction(a: number, b: number, x: number): number {
  * the cumulative of Student's t, F, the binomial and the negative binomial.
  */
 export function incompleteBeta(a: number, b: number, x: number): number {
+  return incompleteBetaWithComplement(a, b, x, 1 - x);
+}
+
+/**
+ * `I_x(a, b)` where the caller can supply `1 - x` more accurately than
+ * subtraction would.
+ *
+ * The distributions that reach this function do not start from `x`. Student's
+ * t starts from `t` and forms `v / (v + t^2)`, whose complement is
+ * `t^2 / (v + t^2)` — two exact divisions of the same pair of numbers. Letting
+ * the function subtract instead throws that away: at `t = 0.0125` on a million
+ * degrees of freedom, `x` is `1 - 1.6e-10`, and `1 - x` recovered from the
+ * stored double keeps six digits of a quantity that was known to sixteen.
+ *
+ * So the complement is a parameter. Every branch below uses whichever of the
+ * two the caller measured, and neither is ever reconstructed.
+ */
+export function incompleteBetaWithComplement(
+  a: number,
+  b: number,
+  x: number,
+  xc: number,
+): number {
   if (Number.isNaN(a) || Number.isNaN(b) || Number.isNaN(x)) return Number.NaN;
   if (a <= 0 || b <= 0) return Number.NaN;
   if (x <= 0) return 0;
-  if (x >= 1) return 1;
+  if (xc <= 0) return 1;
   const front = Math.exp(
-    a * Math.log(x) + b * Math.log1p(-x) - lnBeta(a, b),
+    a * Math.log(x) + b * Math.log(xc) - lnBeta(a, b),
   );
   // The fraction converges quickly only on the side of the mode where the
-  // integrand is still rising. Past it, reflect and subtract.
+  // integrand is still rising. Past it, reflect and subtract — and past it is
+  // also where the answer is the large one, so the subtraction has nothing
+  // small to destroy.
   return x < (a + 1) / (a + b + 2)
     ? (front * betaContinuedFraction(a, b, x)) / a
-    : 1 - (front * betaContinuedFraction(b, a, 1 - x)) / b;
+    : 1 - (front * betaContinuedFraction(b, a, xc)) / b;
 }
 
 /**

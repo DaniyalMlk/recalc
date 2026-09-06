@@ -22,6 +22,7 @@ import {
   gammaP,
   gammaQ,
   incompleteBeta,
+  incompleteBetaWithComplement,
   invertMonotone,
   lnBeta,
   lnChoose,
@@ -249,25 +250,31 @@ export function studentTPdf(t: number, df: number): number {
 }
 
 /**
- * The left-tail cumulative of Student's t.
+ * The two-tailed probability that `|T|` exceeds `|t|`.
  *
- * `I_x(v/2, 1/2)` at `x = v / (v + t^2)` is the two-tailed probability; the
- * sign of `t` decides which half of it the answer is. Branching on the sign
- * rather than subtracting keeps both tails accurate: the small one is computed
- * as the small one.
+ * `I_x(v/2, 1/2)` at `x = v / (v + t^2)` is the textbook form and it is only
+ * half of an implementation. For a small `t` that argument is a hair under
+ * one — at `t = 0.0125` on a million degrees of freedom it is `1 - 1.6e-10` —
+ * and a double stores it with sixteen digits of absolute room, which leaves
+ * six digits in the part that carries all the information. The reflected form
+ * computes `t^2 / (v + t^2)` instead, which is that small number *directly*,
+ * with no subtraction anywhere near it.
+ *
+ * So the branch is not about speed. Each side computes whichever of the answer
+ * and its complement is the small one, which is the only way both ends of the
+ * distribution keep their digits.
  */
-export function studentTCdf(t: number, df: number): number {
-  if (df <= 0) return Number.NaN;
-  if (t === 0) return 0.5;
-  const x = df / (df + t * t);
-  const half = 0.5 * incompleteBeta(df / 2, 0.5, x);
-  return t > 0 ? 1 - half : half;
-}
-
-/** The two-tailed probability that `|T|` exceeds `|t|`. */
 export function studentTTwoTail(t: number, df: number): number {
   if (df <= 0) return Number.NaN;
-  return incompleteBeta(df / 2, 0.5, df / (df + t * t));
+  const squared = t * t;
+  if (!Number.isFinite(squared)) return 0;
+  const total = df + squared;
+  return incompleteBetaWithComplement(
+    df / 2,
+    0.5,
+    df / total,
+    squared / total,
+  );
 }
 
 /**
@@ -276,15 +283,21 @@ export function studentTTwoTail(t: number, df: number): number {
  * The subtraction is what a p-value is usually written as and it is exactly
  * wrong for the case a p-value matters in: for `t = 8` on a hundred degrees of
  * freedom the answer is around 1e-12, the cumulative is one to every bit a
- * double has, and the difference is zero. Only the positive branch needs the
- * care — on the other side the answer is order one and there is nothing small
- * to lose.
+ * double has, and the difference is zero.
  */
 export function studentTSf(t: number, df: number): number {
   if (df <= 0) return Number.NaN;
   if (t === 0) return 0.5;
-  const half = 0.5 * incompleteBeta(df / 2, 0.5, df / (df + t * t));
+  const half = 0.5 * studentTTwoTail(t, df);
   return t > 0 ? half : 1 - half;
+}
+
+/** The left-tail cumulative of Student's t. */
+export function studentTCdf(t: number, df: number): number {
+  if (df <= 0) return Number.NaN;
+  if (t === 0) return 0.5;
+  const half = 0.5 * studentTTwoTail(t, df);
+  return t > 0 ? 1 - half : half;
 }
 
 /** A normal quantile inflated for the heavier tail — a serviceable seed. */
@@ -345,7 +358,13 @@ export function fCdf(x: number, d1: number, d2: number): number {
   if (d1 <= 0 || d2 <= 0) return Number.NaN;
   if (x <= 0) return 0;
   if (!Number.isFinite(x)) return 1;
-  return incompleteBeta(d1 / 2, d2 / 2, (d1 * x) / (d1 * x + d2));
+  const total = d1 * x + d2;
+  return incompleteBetaWithComplement(
+    d1 / 2,
+    d2 / 2,
+    (d1 * x) / total,
+    d2 / total,
+  );
 }
 
 /**
@@ -358,7 +377,13 @@ export function fSf(x: number, d1: number, d2: number): number {
   if (d1 <= 0 || d2 <= 0) return Number.NaN;
   if (x <= 0) return 1;
   if (!Number.isFinite(x)) return 0;
-  return incompleteBeta(d2 / 2, d1 / 2, d2 / (d1 * x + d2));
+  const total = d1 * x + d2;
+  return incompleteBetaWithComplement(
+    d2 / 2,
+    d1 / 2,
+    d2 / total,
+    (d1 * x) / total,
+  );
 }
 
 export function fInv(p: number, d1: number, d2: number): number {
