@@ -20,8 +20,28 @@
 /** Relative tolerance the iterations are driven to; about 4 ulp. */
 const TOLERANCE = 1e-15;
 
-/** Iteration cap. Both expansions converge in well under 100 terms in range. */
-const MAX_ITERATIONS = 300;
+/**
+ * Iteration cap for the continued fractions.
+ *
+ * Both of them converge in well under two hundred terms anywhere in the region
+ * they are used for, so this is a safety bound rather than a working limit.
+ */
+const MAX_ITERATIONS = 10000;
+
+/**
+ * Iteration cap for the gamma *series*, which unlike the fractions genuinely
+ * needs more terms as its argument grows.
+ *
+ * The number of terms is order `sqrt(a)` near the handover point `x = a + 1`,
+ * and that point is not an exotic corner: for a chi-squared on a million
+ * degrees of freedom the median lands within one of it. A fixed cap therefore
+ * does not fail on absurd input, it fails on the middle of a large
+ * distribution — and it fails *silently*, returning a partial sum that looks
+ * like a probability. This scales, and non-convergence is reported.
+ */
+function seriesIterationLimit(a: number): number {
+  return Math.ceil(1000 + 100 * Math.sqrt(a));
+}
 
 /** Smallest positive normal double, used to keep Lentz's method off zero. */
 const TINY = 1e-300;
@@ -108,15 +128,21 @@ export function lnFactorial(n: number): number {
  * stopping test on the relative size of the last term is honest.
  */
 function gammaSeries(a: number, x: number): number {
+  const limit = seriesIterationLimit(a);
   let term = 1 / a;
   let sum = term;
   let ap = a;
-  for (let i = 0; i < MAX_ITERATIONS; i++) {
+  let converged = false;
+  for (let i = 0; i < limit; i++) {
     ap += 1;
     term *= x / ap;
     sum += term;
-    if (Math.abs(term) < Math.abs(sum) * TOLERANCE) break;
+    if (Math.abs(term) < Math.abs(sum) * TOLERANCE) {
+      converged = true;
+      break;
+    }
   }
+  if (!converged) return Number.NaN;
   return sum * Math.exp(-x + a * Math.log(x) - lnGamma(a));
 }
 
@@ -135,6 +161,7 @@ function gammaContinuedFraction(a: number, x: number): number {
   let c = 1 / TINY;
   let d = 1 / b;
   let h = d;
+  let converged = false;
   for (let i = 1; i <= MAX_ITERATIONS; i++) {
     const an = -i * (i - a);
     b += 2;
@@ -145,8 +172,12 @@ function gammaContinuedFraction(a: number, x: number): number {
     d = 1 / d;
     const delta = d * c;
     h *= delta;
-    if (Math.abs(delta - 1) < TOLERANCE) break;
+    if (Math.abs(delta - 1) < TOLERANCE) {
+      converged = true;
+      break;
+    }
   }
+  if (!converged) return Number.NaN;
   return h * Math.exp(-x + a * Math.log(x) - lnGamma(a));
 }
 
@@ -243,9 +274,9 @@ function betaContinuedFraction(a: number, b: number, x: number): number {
     d = 1 / d;
     const delta = d * c;
     h *= delta;
-    if (Math.abs(delta - 1) < TOLERANCE) break;
+    if (Math.abs(delta - 1) < TOLERANCE) return h;
   }
-  return h;
+  return Number.NaN;
 }
 
 /**
