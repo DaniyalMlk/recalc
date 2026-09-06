@@ -500,13 +500,28 @@ export function regressCommand(
   }
 }
 
+/**
+ * A probability, rounded to where it stops being readable.
+ *
+ * Eight significant figures on a p-value is noise — nobody acts on the seventh
+ * digit of 0.0431 — but the exponent matters, so a small one keeps its
+ * magnitude rather than collapsing to `0`.
+ */
+function probability(value: number): string {
+  if (!Number.isFinite(value)) return "n/a";
+  if (value === 0) return "0";
+  if (value < 1e-4) return value.toExponential(2);
+  return value.toFixed(6);
+}
+
 function renderSummary(summary: Summary, ink: Ink): string {
-  const header = ["term", "coefficient", "std error", "t"];
+  const header = ["term", "coefficient", "std error", "t", "p"];
   const rows = summary.terms.map((term) => [
     term.label,
     short(term.coefficient),
     short(term.standardError),
     short(term.t),
+    probability(term.p),
   ]);
   const lines = grid([header, ...rows]);
   const [first, ...rest] = lines;
@@ -521,6 +536,7 @@ function renderSummary(summary: Summary, ink: Ink): string {
     ["adjusted r squared", short(summary.adjustedRSquared)],
     ["standard error", short(summary.standardError)],
     ["f", short(summary.f)],
+    ["significance f", probability(summary.significanceF)],
   ]).map((line) => ink.dim(line));
 
   return [ink.ok(first ?? ""), ...rest, "", ...stats].join("\n");
