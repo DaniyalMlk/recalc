@@ -52,3 +52,16 @@ export type {
   Summary,
   SummaryColumn,
 } from "./scenarios.js";
+
+export {
+  TTEST_USAGE,
+  TTestError,
+  parseTTestCommand,
+  runTTest,
+} from "./ttest.js";
+export type {
+  SampleSummary,
+  TTestCommand,
+  TTestKind,
+  TTestReport,
+} from "./ttest.js";

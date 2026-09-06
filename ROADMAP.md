@@ -190,7 +190,7 @@ tree green and the public API usable.
 - [x] Normal, Student's t, chi-squared, F, gamma, beta, lognormal, exponential and Weibull
 - [x] Binomial, Poisson, hypergeometric and negative binomial, over exact identities rather than summation
 - [x] The spreadsheet functions under their dotted names, with per-family domain checks
-- [ ] Hypothesis tests: `T.TEST`, `F.TEST`, `CHISQ.TEST`, `Z.TEST`
-- [ ] Confidence intervals: `CONFIDENCE.NORM` and `CONFIDENCE.T`
-- [ ] A p-value beside every coefficient in the regression summary, and a significance for the F
-- [ ] `.ttest` in the shell, and the distribution presets in its help
+- [x] Hypothesis tests: `T.TEST`, `F.TEST`, `CHISQ.TEST`, `Z.TEST`
+- [x] Confidence intervals: `CONFIDENCE.NORM` and `CONFIDENCE.T`
+- [x] A p-value beside every coefficient in the regression summary, and a significance for the F
+- [x] `.ttest` in the shell, naming the three tests rather than numbering them

@@ -22,6 +22,7 @@ import {
   amortiseCommand,
   goalSeekCommand,
   regressCommand,
+  tTestCommand,
   tableCommand,
 } from "./analysis/commands.js";
 import {
@@ -120,6 +121,9 @@ export const HELP = `
                             several predictors at once
     .regress B2:B12 by C2:C12 through zero
                             with no intercept
+    .ttest A1:A9 vs B1:B9   compare two samples, Welch by default
+    .ttest A1:A9 vs B1:B9 paired one-tailed
+                            paired, and only one side of it
 
   ${paint(BOLD, "Debt")}
     .amortise 250000 at 5.5%/12 over 360
@@ -714,6 +718,10 @@ function handle(
 
   if (line === ".regress" || line.startsWith(".regress ")) {
     return regressCommand(book, line.slice(8), INK);
+  }
+
+  if (line === ".ttest" || line.startsWith(".ttest ")) {
+    return tTestCommand(book, line.slice(6), INK);
   }
 
   if (line === ".table" || line.startsWith(".table ")) {

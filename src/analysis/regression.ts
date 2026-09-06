@@ -22,6 +22,7 @@ import {
 } from "../engine/reference.js";
 import type { RangeRef } from "../engine/reference.js";
 import { leastSquares } from "../numeric/linalg.js";
+import { fSignificance, twoTailedP } from "../numeric/inference.js";
 import type { Workbook } from "../engine/workbook.js";
 
 export class RegressionError extends Error {
@@ -39,6 +40,15 @@ export interface Term {
   readonly standardError: number;
   /** Coefficient over its standard error; how many errors from zero it sits. */
   readonly t: number;
+  /**
+   * The two-tailed probability of a `t` at least this far from zero, if the
+   * coefficient really were zero.
+   *
+   * This is the column the summary was missing. A `t` of 2.31 is significant
+   * at the 5% level on eight degrees of freedom and is not on two, and the
+   * statistic alone leaves the reader to look that up.
+   */
+  readonly p: number;
 }
 
 export interface Summary {
@@ -52,6 +62,15 @@ export interface Summary {
   readonly f: number;
   readonly ssRegression: number;
   readonly ssResidual: number;
+  /**
+   * The probability of an `F` this large if every coefficient were zero.
+   *
+   * The per-term p-values do not answer this. Each of them asks about one
+   * predictor with the others held in the model, and with enough predictors
+   * one of them clears any threshold by chance; the `F` asks whether the fit
+   * as a whole is worth anything, which is the question to ask first.
+   */
+  readonly significanceF: number;
 }
 
 function valuesOf(book: Workbook, range: RangeRef): number[][] {
@@ -138,20 +157,24 @@ export function summarise(
   const offset = withIntercept ? 1 : 0;
   if (withIntercept) {
     const se = sey * Math.sqrt(Math.max(fit.variance[0]!, 0));
+    const t = se === 0 ? Number.NaN : fit.coefficients[0]! / se;
     terms.push({
       label: "intercept",
       coefficient: fit.coefficients[0]!,
       standardError: se,
-      t: se === 0 ? Number.NaN : fit.coefficients[0]! / se,
+      t,
+      p: Number.isNaN(t) ? Number.NaN : twoTailedP(t, df),
     });
   }
   for (let j = 0; j < k; j++) {
     const se = sey * Math.sqrt(Math.max(fit.variance[offset + j]!, 0));
+    const t = se === 0 ? Number.NaN : fit.coefficients[offset + j]! / se;
     terms.push({
       label: labelFor(xRange, j),
       coefficient: fit.coefficients[offset + j]!,
       standardError: se,
-      t: se === 0 ? Number.NaN : fit.coefficients[offset + j]! / se,
+      t,
+      p: Number.isNaN(t) ? Number.NaN : twoTailedP(t, df),
     });
   }
 
@@ -163,6 +186,11 @@ export function summarise(
     ? 1 - ((1 - rSquared) * (n - 1)) / df
     : 1 - ((1 - rSquared) * n) / df;
 
+  const f =
+    ssResidual === 0
+      ? Number.POSITIVE_INFINITY
+      : ssRegression / k / (ssResidual / df);
+
   return {
     terms,
     observations: n,
@@ -171,9 +199,10 @@ export function summarise(
     rSquared,
     adjustedRSquared,
     standardError: sey,
-    f: ssResidual === 0 ? Number.POSITIVE_INFINITY : (ssRegression / k) / (ssResidual / df),
+    f,
     ssRegression,
     ssResidual,
+    significanceF: Number.isFinite(f) ? fSignificance(f, k, df) : 0,
   };
 }
 

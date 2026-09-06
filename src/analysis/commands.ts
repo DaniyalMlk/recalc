@@ -11,6 +11,12 @@ import { formatA1, parseA1 } from "../engine/reference.js";
 import { ReferenceError_ } from "../engine/reference.js";
 import type { Value } from "../engine/value.js";
 import type { Workbook } from "../engine/workbook.js";
+import {
+  TTestError,
+  parseTTestCommand,
+  runTTest,
+} from "./ttest.js";
+import type { TTestReport } from "./ttest.js";
 import { parseAxis } from "./axis.js";
 import { applyGoalSeek, goalSeek } from "./goalseek.js";
 import {
@@ -500,13 +506,28 @@ export function regressCommand(
   }
 }
 
+/**
+ * A probability, rounded to where it stops being readable.
+ *
+ * Eight significant figures on a p-value is noise — nobody acts on the seventh
+ * digit of 0.0431 — but the exponent matters, so a small one keeps its
+ * magnitude rather than collapsing to `0`.
+ */
+function probability(value: number): string {
+  if (!Number.isFinite(value)) return "n/a";
+  if (value === 0) return "0";
+  if (value < 1e-4) return value.toExponential(2);
+  return value.toFixed(6);
+}
+
 function renderSummary(summary: Summary, ink: Ink): string {
-  const header = ["term", "coefficient", "std error", "t"];
+  const header = ["term", "coefficient", "std error", "t", "p"];
   const rows = summary.terms.map((term) => [
     term.label,
     short(term.coefficient),
     short(term.standardError),
     short(term.t),
+    probability(term.p),
   ]);
   const lines = grid([header, ...rows]);
   const [first, ...rest] = lines;
@@ -521,6 +542,54 @@ function renderSummary(summary: Summary, ink: Ink): string {
     ["adjusted r squared", short(summary.adjustedRSquared)],
     ["standard error", short(summary.standardError)],
     ["f", short(summary.f)],
+    ["significance f", probability(summary.significanceF)],
+  ]).map((line) => ink.dim(line));
+
+  return [ink.ok(first ?? ""), ...rest, "", ...stats].join("\n");
+}
+
+/**
+ * `.ttest <a> vs <b> [paired|pooled|welch] [one-tailed]`
+ *
+ * The comparison laid out with the things that decide how to read it: how many
+ * observations each side had, what each mean and spread was, and the
+ * difference the test is about — then the statistic, its degrees of freedom
+ * and the probability.
+ */
+export function tTestCommand(
+  book: Workbook,
+  tail: string,
+  ink: Ink = PLAIN,
+): string {
+  const parsed = parseTTestCommand(tail);
+  if (typeof parsed === "string") return ink.bad(`  ${parsed}`);
+
+  let report: TTestReport;
+  try {
+    report = runTTest(book, parsed);
+  } catch (error) {
+    if (error instanceof TTestError) return ink.bad(`  ${error.message}`);
+    throw error;
+  }
+
+  const header = ["sample", "n", "mean", "variance"];
+  const rows = [report.first, report.second].map((sample) => [
+    sample.label,
+    String(sample.count),
+    short(sample.mean),
+    short(sample.variance),
+  ]);
+  const lines = grid([header, ...rows]);
+  const [first, ...rest] = lines;
+
+  // The degrees of freedom are shown because Welch's are fractional, and a
+  // reader checking the result against a table needs to know that.
+  const stats = grid([
+    ["test", `${report.kind}, ${report.tails === 1 ? "one" : "two"}-tailed`],
+    ["difference in means", short(report.difference)],
+    ["t", short(report.t)],
+    ["degrees of freedom", short(report.df)],
+    ["p", probability(report.p)],
   ]).map((line) => ink.dim(line));
 
   return [ink.ok(first ?? ""), ...rest, "", ...stats].join("\n");
