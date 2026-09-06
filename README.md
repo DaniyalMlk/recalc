@@ -425,12 +425,12 @@ rather than the way `LINEST` returns it:
 
 ```
 recalc> .regress E1:E11 by A1:D11
-       term  coefficient  std error           t
-  intercept    52317.831  12237.362   4.2752541
-          A    27.641387   5.429374   5.0910818
-          B    12529.768  400.06684   31.319187
-          C    2553.2107  530.66915   4.8113041
-          D   -234.23716  13.268011  -17.654278
+       term  coefficient  std error           t         p
+  intercept    52317.831  12237.362   4.2752541  0.005233
+          A    27.641387   5.429374   5.0910818  0.002241
+          B    12529.768  400.06684   31.319187   7.04e-8
+          C    2553.2107  530.66915   4.8113041  0.002966
+          D   -234.23716  13.268011  -17.654278   2.12e-6
 
         observations          11
           predictors           4
@@ -439,11 +439,20 @@ recalc> .regress E1:E11 by A1:D11
   adjusted r squared  0.99457999
       standard error   970.57846
                    f   459.75367
+      significance f     1.37e-7
 ```
 
 Adjusted R-squared sits beside the raw one because the raw one can only go up
 as columns are added, and on its own says nothing about whether the column was
 worth including.
+
+The p column is the same reasoning applied to each term. A t of 4.28 is
+significant at the 1% level on six degrees of freedom and is not on two, and a
+statistic that has to be looked up in a table is half an answer. The
+significance of the F is the question to ask *first*, though: each per-term
+p-value asks about one predictor with the others held in the model, and with
+enough predictors one of them clears any threshold by chance, whereas the F
+asks whether the fit as a whole is worth anything.
 
 ## Statistical distributions
 
@@ -507,6 +516,53 @@ Densities are computed in logs and exponentiated once, which is what keeps
 `BINOM.DIST(500000, 1000000, 0.5, FALSE)` — a coefficient far past the largest
 double, multiplied by two vanishing powers — representable at every step on the
 way to an answer near `8e-4`.
+
+### Hypothesis tests
+
+```
+=T.TEST(A1:A9, B1:B9, tails, type)   1 paired, 2 equal variance, 3 Welch
+=F.TEST(A1:A9, B1:B9)                do the two samples share a variance
+=CHISQ.TEST(observed, expected)      independence, over two blocks
+=Z.TEST(A1:A9, mu, [sigma])          a sample mean against a hypothesis
+=CONFIDENCE.NORM(alpha, sigma, n)    half-width of an interval
+=CONFIDENCE.T(alpha, sigma, n)       and when the spread is estimated
+```
+
+**`CHISQ.TEST` takes its degrees of freedom from the shape of the blocks, not
+from how many cells they hold.** A 2×2 contingency table has one degree of
+freedom, because fixing the margins fixes that many cells; the same four
+numbers laid out as a single row are a goodness-of-fit test with three.
+Counting cells would give three in both cases, and would be wrong for every
+table that is not a strip.
+
+**Welch's degrees of freedom are not rounded.** The Satterthwaite
+approximation almost never lands on a whole number, and rounding it is a habit
+inherited from printed tables, which could only be indexed by integers. It
+moves the p-value in the third digit for no reason once the distribution can be
+evaluated at any real degrees of freedom.
+
+From the shell, `.ttest` runs the comparison with the things that decide how to
+read it — a bare `0.196` does not say how many observations stood behind it or
+which of the three tests produced it:
+
+```
+recalc> .ttest A1:A9 vs B1:B9
+  sample  n       mean   variance
+   A1:A9  9  4.5555556  6.7777778
+   B1:B9  9  7.8888889  47.111111
+
+                 test  welch, two-tailed
+  difference in means         -3.3333333
+                    t         -1.3622298
+   degrees of freedom          10.255209
+                    p           0.202294
+```
+
+Welch is the default rather than the pooled test. Pooling assumes the two
+samples share a variance, and when they do not — the ordinary case for two
+groups of different sizes — it reports a smaller p-value than the evidence
+supports. Welch costs nothing when the assumption does hold, since the two then
+agree, so the safe one is the one that does not have to be asked for.
 
 ## What-if analysis
 
@@ -755,7 +811,8 @@ what-if `.goalseek B6 = 0 by B1 [apply]` and
 `.table B6 by B1 = 20..40/5 [x B2 = 500..2000/4] [into D1]`; for scenarios
 `.scenario Base = B1:B3`, `.scenario Down = B1=25`, `.scenarios`,
 `.apply Down`, `.unscenario Down`, `.summary B6:B8`; for a fit
-`.regress E1:E11 by A1:D11 [through zero]`; and for CSV
+`.regress E1:E11 by A1:D11 [through zero]`; for a comparison
+`.ttest A1:A9 vs B1:B9 [paired|pooled|welch] [one-tailed]`; and for CSV
 `.csv [formulas|display]`, `.import data.csv [A1]`,
 `.export out.csv [formulas|display]`.
 
@@ -872,6 +929,18 @@ worked examples rather than against their own output:
   each cumulative against the running total of its own density.
 - Two hundred values across eight distributions agree with an independent
   implementation to `5e-12` relative or better.
+- Each hypothesis test reproduces a published worked example, and is checked
+  against the distribution it is built on rather than only against that number:
+  every t test's p equals `T.DIST.2T` of its own statistic, `F.TEST` equals
+  twice the upper tail of the ratio it forms, and `CHISQ.TEST` equals
+  `CHISQ.DIST.RT` of Pearson's statistic.
+- The tests are checked against each other where they have to agree: the paired
+  test equals a one-sample test on the differences, and the pooled and Welch
+  tests coincide — statistic, degrees of freedom and p — on two samples of the
+  same size and spread.
+- On a single-predictor fit, the significance of the F equals the p-value on
+  the slope, since with one predictor the two are the same question and F is
+  the square of t.
 
 **A named range is expanded into the graph, not resolved at evaluation time.**
 If `Revenue` is `B2:B13`, then editing `B7` has to recalculate everything that
@@ -1021,8 +1090,6 @@ than a wait.
 - `LINEST` refuses linearly dependent predictors rather than dropping columns
   to the rank of the design matrix, which is what a rank-revealing
   factorisation would allow.
-- There is no t or F distribution, so `.regress` reports each t statistic and
-  the F but not a p value for either.
 - `LOGEST` and `GROWTH`, the exponential counterparts of `LINEST` and `TREND`,
   are not implemented.
 - Omitted arguments (`IF(A1,,2)`) are a parse error.
