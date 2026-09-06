@@ -180,3 +180,17 @@ tree green and the public API usable.
 - [x] `SLOPE`, `INTERCEPT`, `RSQ`, `PEARSON`, `CORREL`, `COVARIANCE.P`, `COVARIANCE.S`, `STEYX`
 - [x] Every figure of the published multiple-regression example reproduced
 - [x] `.regress` in the shell, laid out as a summary with a t statistic per term
+
+## Phase 21 — Distributions and inference
+
+- [x] Log-gamma, the error functions, and the two regularised incomplete integrals behind every family
+- [x] Each integral by whichever expansion converges where the argument lies, with an iteration cap that scales rather than truncating silently
+- [x] Right tails and right-tailed inverses computed as tails, never as one minus the other side
+- [x] The complement passed in where the caller already knows it exactly, rather than recovered by subtraction
+- [x] Normal, Student's t, chi-squared, F, gamma, beta, lognormal, exponential and Weibull
+- [x] Binomial, Poisson, hypergeometric and negative binomial, over exact identities rather than summation
+- [x] The spreadsheet functions under their dotted names, with per-family domain checks
+- [ ] Hypothesis tests: `T.TEST`, `F.TEST`, `CHISQ.TEST`, `Z.TEST`
+- [ ] Confidence intervals: `CONFIDENCE.NORM` and `CONFIDENCE.T`
+- [ ] A p-value beside every coefficient in the regression summary, and a significance for the F
+- [ ] `.ttest` in the shell, and the distribution presets in its help
