@@ -194,3 +194,28 @@ tree green and the public API usable.
 - [x] Confidence intervals: `CONFIDENCE.NORM` and `CONFIDENCE.T`
 - [x] A p-value beside every coefficient in the regression summary, and a significance for the F
 - [x] `.ttest` in the shell, naming the three tests rather than numbering them
+
+## Phase 22 — Installable, and tested somewhere other than a laptop
+
+- [x] Published under `recalc-formula`, since `recalc` on npm is an unrelated
+      package. The repository, the command line and the import surface keep
+      their own name; only the distribution name moves, and the README says so
+      rather than leaving somebody to install the wrong thing.
+- [x] `repository` set and matching this repository exactly, which npm trusted
+      publishing compares against the publishing workflow and refuses the
+      publish without
+- [x] `exports`, `engines`, `publishConfig`, `bugs`, `homepage` and `author`
+- [x] `prepack` wired to the build, so packing cannot ship a stale `dist`
+- [x] Source maps off in the published build: `files` is `["dist"]`, so every
+      map that shipped pointed at a `src/` path the tarball does not contain.
+      198 files and 1.2 MB down to 133 and 743 KB.
+- [x] Tests over what `npm pack` would ship, which is the one thing a suite
+      that imports from `../src` cannot see, each verified against the defect
+      it exists for
+- [x] Continuous integration across the Node range `engines` claims, the web
+      demo built separately since it has its own bundler, and the tarball
+      installed into a bare project and evaluated from there
+- [x] A tag-driven release that refuses a tag disagreeing with the manifest and
+      holds `id-token: write` and nothing else, so no credential is stored
+- [ ] The trusted publisher registered on npm for `recalc-formula`. Until then
+      the workflow is committed and no tag is pushed.
