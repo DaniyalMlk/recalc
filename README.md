@@ -29,10 +29,26 @@ analysis with goal seek, sensitivity tables and named scenarios, and a web
 interface where all of it is reachable from a virtualised grid — the analysis
 included.
 
+## Installing it
+
+```bash
+npm install recalc-formula
+```
+
+**The package is `recalc-formula`, not `recalc`.** `recalc` on npm is an
+unrelated package, so the distribution name differs; the command line is still
+called `recalc`, and so is this repository. Node 20.19 or newer. The package
+ships compiled JavaScript and type declarations and has no runtime
+dependencies.
+
+```bash
+npx recalc        # the REPL
+```
+
 ## Using it as a library
 
 ```ts
-import { Workbook } from "recalc";
+import { Workbook } from "recalc-formula";
 
 const book = new Workbook();
 book.setCells({
@@ -135,7 +151,7 @@ two dates cannot disagree.
 `TODAY` and `NOW` read a clock the host can replace:
 
 ```ts
-import { setClock } from "recalc";
+import { setClock } from "recalc-formula";
 
 setClock({ now: () => Date.UTC(2026, 2, 4) });   // evaluate "as at" a date
 ```
@@ -149,7 +165,7 @@ A format code is compiled once into digit positions, literals and up to four
 sections, then applied to values as often as needed:
 
 ```ts
-import { formatWith, parseFormatCode, applyFormat } from "recalc";
+import { formatWith, parseFormatCode, applyFormat } from "recalc-formula";
 
 formatWith("#,##0.00", 237560.620691).text;   // "237,560.62"
 formatWith("0.0%", 0.1356486793).text;        // "13.6%"
@@ -573,7 +589,7 @@ the sheet with a cell temporarily holding something else, read a result, put
 the sheet back.
 
 ```ts
-import { Workbook, goalSeek, twoWayTable, series } from "recalc";
+import { Workbook, goalSeek, twoWayTable, series } from "recalc-formula";
 
 const book = new Workbook();
 book.setCells({
@@ -1120,6 +1136,22 @@ than a wait.
 - Reference highlighting outlines only references written out in the formula.
   A name is underlined in the formula bar and resolved in the inspector, but
   the cells behind it are not outlined on the grid.
+
+## Releasing
+
+A release is a tag. `v0.1.0` publishes `0.1.0` and nothing else publishes
+anything: the workflow refuses a tag that disagrees with `package.json`, runs
+the suite and the type check, then installs the packed tarball into a bare
+project and evaluates a formula through it before anything reaches the
+registry.
+
+The publish job holds one permission, `id-token: write`. There is no npm token
+in this repository, in its secrets, or in any log: npm trusted publishing
+exchanges a short-lived OIDC token for the right to publish this package from
+this repository, and attaches build provenance automatically. That also means
+the trusted publisher has to be registered on npm for `recalc-formula` before
+the first tag is pushed — the registry does not validate the arrangement until
+a publish is attempted.
 
 ## License
 

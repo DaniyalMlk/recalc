@@ -1,8 +1,12 @@
 {
+  // The published build. Source maps are off here rather than inherited:
+  // `files` is `["dist"]`, so a map that ships points at a `src/` path the
+  // tarball does not contain, which is a broken map rather than a useful one.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "sourceMap": false
   },
   "include": ["src/**/*.ts"]
 }
