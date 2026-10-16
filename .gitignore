@@ -5,3 +5,4 @@ graphify-out/
 *.tsbuildinfo
 .DS_Store
 web/dist/
+*.tgz

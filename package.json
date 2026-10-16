@@ -1,18 +1,52 @@
 {
-  "name": "recalc",
+  "name": "recalc-formula",
   "version": "0.1.0",
   "description": "A spreadsheet formula engine in TypeScript: lexer, parser, dependency graph and incremental recalculation.",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "author": "Daniyal",
+  "keywords": [
+    "spreadsheet",
+    "formula",
+    "parser",
+    "dependency-graph",
+    "incremental",
+    "recalculation",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DaniyalMlk/recalc.git"
+  },
+  "bugs": {
+    "url": "https://github.com/DaniyalMlk/recalc/issues"
+  },
+  "homepage": "https://github.com/DaniyalMlk/recalc#readme",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "bin": {
     "recalc": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "build:web": "vite build --config web/vite.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json",
     "test": "vitest run",
@@ -22,14 +56,6 @@
     "web": "vite --config web/vite.config.ts",
     "bench:whatif": "tsx bench/whatif.bench.ts"
   },
-  "keywords": [
-    "spreadsheet",
-    "formula",
-    "parser",
-    "dependency-graph",
-    "typescript"
-  ],
-  "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.20.1",
     "tsx": "^4.19.2",
