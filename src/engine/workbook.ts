@@ -17,7 +17,7 @@ import { parseFormula } from "./parser.js";
 import { extractPrecedents } from "./precedents.js";
 import type { Precedents } from "./precedents.js";
 import { printFormula } from "./printer.js";
-import { recalculate } from "./recalc.js";
+import { recalculate, type RecalcStats } from "./recalc.js";
 import {
   MAX_COLUMNS,
   MAX_ROWS,
@@ -253,6 +253,12 @@ export class Workbook {
   private readonly nameUsers = new Map<string, Set<string>>();
 
   private readonly journal = new EditJournal();
+
+  /** What the most recent recalculation actually did. */
+  private lastRecalcCounts: { readonly evaluated: number; readonly cycled: number } = {
+    evaluated: 0,
+    cycled: 0,
+  };
 
   /**
    * Set while an operation is being recorded or replayed.
@@ -921,6 +927,29 @@ export class Workbook {
   }
 
   /**
+   * How many cells the most recent mutation actually evaluated.
+   *
+   * The whole design rests on an edit costing what depends on it rather than
+   * the size of the sheet, and until now that claim could only be checked
+   * against the dependency graph — which is the engine's own *prediction* of
+   * what it will do, not a record of what it did. The two agreeing is worth
+   * asserting; an engine that re-evaluated a whole sheet while the graph
+   * reported three dependents would look identical from the outside and be
+   * wrong in the way that matters.
+   *
+   * Counted across every spill pass of the edit, since a moving spill
+   * footprint can take several and the cost of the edit is all of them.
+   */
+  get lastRecalculated(): number {
+    return this.lastRecalcCounts.evaluated;
+  }
+
+  /** Cells short-circuited by a circular reference in that same recalculation. */
+  get lastCycled(): number {
+    return this.lastRecalcCounts.cycled;
+  }
+
+  /**
    * Bounding box of everything the sheet shows, or `null` when empty.
    *
    * Spilled cells count: they are on the sheet, an export has to include them,
@@ -1136,16 +1165,24 @@ export class Workbook {
    */
   private recalculateFrom(seeds: readonly Coord[]): void {
     let wave: readonly Coord[] = seeds;
+    let evaluated = 0;
+    let cycled = 0;
     for (let pass = 0; pass < MAX_SPILL_PASSES && wave.length > 0; pass++) {
       this.spillTouched = [];
-      this.runRecalculation(wave);
+      const stats = this.runRecalculation(wave);
+      evaluated += stats.evaluated;
+      cycled += stats.cycled;
       wave = this.spillTouched;
     }
     this.spillTouched = [];
+    // Summed over the spill passes rather than taken from the last one: a
+    // moving spill footprint can take several, and the cost of the edit is
+    // all of them.
+    this.lastRecalcCounts = { evaluated, cycled };
   }
 
-  private runRecalculation(seeds: readonly Coord[]): void {
-    recalculate<CallResult>(this.graph, seeds, {
+  private runRecalculation(seeds: readonly Coord[]): RecalcStats {
+    return recalculate<CallResult>(this.graph, seeds, {
       evaluate: (coord) => this.evaluateCell(coord),
       cycleValue: (_coord, cycle) =>
         err(
