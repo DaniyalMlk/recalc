@@ -46,6 +46,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "evidence": "tsx scripts/evidence-main.ts",
     "prepack": "npm run build",
     "build:web": "vite build --config web/vite.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json",

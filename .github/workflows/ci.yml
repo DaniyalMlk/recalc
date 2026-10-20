@@ -31,6 +31,24 @@ jobs:
       - name: Test
         run: npm test
 
+  evidence:
+    name: The README's figures still hold
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+      - name: Install
+        run: npm ci
+      # Recomputes every figure in the "What is checked, and against what"
+      # table and exits non-zero if one has moved past what its row claims.
+      # The cost rows are counts of cells evaluated rather than timings, so
+      # this means the same thing on a runner as it does anywhere else.
+      - name: Recompute the evidence table
+        run: npm run evidence
+
   package:
     name: The tarball installs and runs
     runs-on: ubuntu-latest
