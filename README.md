@@ -29,6 +29,51 @@ analysis with goal seek, sensitivity tables and named scenarios, and a web
 interface where all of it is reachable from a virtualised grid — the analysis
 included.
 
+## What is checked, and against what
+
+A recalculation engine is easy to describe and hard to believe: every one of
+them says an edit costs what depends on it rather than the size of the sheet.
+So here is what was measured. Every figure is produced by `npm run evidence`,
+which runs in CI and exits non-zero if any of them moves:
+
+| Check | Result |
+| --- | --- |
+| An edit with nothing downstream of it, as the sheet around it grows | 1 cell evaluated in all of 2,000, 20,000, 100,000 cells — the edited cell itself and nothing else |
+| One edit at the head of a chain, at the root of a fan-out, and under three aggregates | 5,000, 5,001 and 4 cells evaluated — the aggregates do not walk their 10,000-cell range |
+| Cells the engine evaluated, against the cells its own graph says depend on the edit | exact agreement over 4 shapes, the edited cell included |
+| `STDEV.P` over the textbook set {2,4,4,4,5,5,7,9} | exactly 2, not 2 to within a tolerance |
+| `LINEST` on one predictor against `SLOPE` and `INTERCEPT`, and `RSQ` against `CORREL` squared | 0 in the slope and the intercept; below 1e-15 in R-squared |
+| A 360-month loan of 200,000 paid off at the instalment `PMT` returns | below 1e-6, of the 200,000 it started at, after every payment — a relative residue under 1e-13 |
+| `MINVERSE(A)` multiplied back by `A`, against the identity matrix | below 1e-14, in every entry |
+
+**The cost rows are counts, not durations.** Milliseconds are a statement about
+the machine they were measured on and can be asserted nowhere else — which is
+why the timings further down are still labelled as one run on one box. The
+number of cells an edit forces the engine to recompute is a property of the
+algorithm, identical everywhere, and it is the thing the design is actually
+betting on. As a timing, "flat as the sheet grows" is a shape on a chart; as a
+count it is 1, 1 and 1 in sheets of 2,000, 20,000 and 100,000 cells.
+
+**The engine is checked against its own graph, not only against itself.** The
+workbook now reports how many cells a mutation evaluated, which until recently
+it computed and discarded. That matters because the dependency graph is the
+engine's *prediction* of the work it will do, and the count is a record of what
+it did: an engine that re-evaluated a whole sheet while its graph reported
+three dependents would look identical from the outside and be wrong in exactly
+the way that matters. The two agreeing over four shapes is a row of its own.
+
+The gate was checked by breaking the thing it guards. Making one call site
+recalculate from every cell instead of from the edited ones — the regression
+the whole design exists to avoid — fails three of the seven rows and takes the
+isolated-edit row from 1 evaluated cell to 100,001.
+
+**An identity says zero; a residue gets a bound.** `STDEV.P` over the textbook
+set is 2 exactly, and on one predictor `LINEST` is not a second opinion about
+`SLOPE` but the same arithmetic reached another way, so both say zero and a
+tolerance there would hide a real regression. The amortisation and matrix rows
+are floating-point residue and publish bounds instead, since the digits of a
+residue are not portable.
+
 ## Installing it
 
 ```bash

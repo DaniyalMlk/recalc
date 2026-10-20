@@ -217,5 +217,11 @@ tree green and the public API usable.
       installed into a bare project and evaluated from there
 - [x] A tag-driven release that refuses a tag disagreeing with the manifest and
       holds `id-token: write` and nothing else, so no credential is stored
+- [x] The count of cells an edit evaluates reported by the workbook rather than
+      computed and discarded, and checked against the dependency graph that
+      predicts it
+- [x] An evidence table of what was checked and against what, in counts rather
+      than durations, recomputed by a gate CI runs and pinned to the document
+      in both directions
 - [ ] The trusted publisher registered on npm for `recalc-formula`. Until then
       the workflow is committed and no tag is pushed.
