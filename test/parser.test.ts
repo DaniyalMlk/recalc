@@ -140,8 +140,19 @@ describe("function calls", () => {
     expect(() => parseFormula("=SUM(A1")).toThrow(ParseError);
   });
 
-  it("rejects an empty argument slot", () => {
-    expect(() => parseFormula("=IF(A1,,2)")).toThrow(ParseError);
+  it("reads an empty argument slot as an argument", () => {
+    // It used to be a parse error. The gap is a third argument, blank, and
+    // has to be counted as one or the arity check is looking at the wrong
+    // number; `test/omitted-arguments.test.ts` has what it then means.
+    const node = parseFormula("=IF(A1,,2)");
+    expect(node.kind).toBe("call");
+    expect(node.kind === "call" ? node.args.length : 0).toBe(3);
+    expect(node.kind === "call" ? node.args[1]?.kind : "").toBe("omitted");
+  });
+
+  it("still rejects a gap outside an argument list", () => {
+    expect(() => parseFormula("=,")).toThrow(ParseError);
+    expect(() => parseFormula("=1+,2")).toThrow(ParseError);
   });
 });
 
