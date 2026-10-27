@@ -163,7 +163,7 @@ function regress(
 
   const fit = leastSquares(designOf(obs, withIntercept), obs.y);
   if (fit === null) {
-    return err("#NUM!", "the predictors are linearly dependent");
+    return err("#NUM!", "the design matrix has no rows or no columns");
   }
 
   let ssTotal = 0;
@@ -175,12 +175,17 @@ function regress(
   }
 
   const ssResidual = fit.ssResidual;
+  // Degrees of freedom come from the RANK, not from the column count. A
+  // dependent column was dropped, so it costs no degree of freedom — and
+  // every standard error, the F statistic and its significance divide by this
+  // number, so taking it from the columns handed in would leave each of them
+  // wrong by the ratio of the two.
   return {
     fit,
     obs,
     withIntercept,
     k: obs.k,
-    df: n - parameters,
+    df: n - fit.rank,
     ssResidual,
     ssRegression: ssTotal - ssResidual,
     ssTotal,
@@ -243,7 +248,9 @@ function linestStatistics(r: Regression): Matrix {
   const errors = reportedStandardErrors(r);
   const sey = standardError(r);
   const r2 = r.ssTotal === 0 ? 1 : r.ssRegression / r.ssTotal;
-  const regressionDf = r.withIntercept ? r.k : r.k;
+  // The numerator's degrees of freedom are the slopes actually fitted, which
+  // is the rank less the intercept where there is one.
+  const regressionDf = r.fit.rank - (r.withIntercept ? 1 : 0);
   const f =
     r.ssResidual === 0
       ? Number.POSITIVE_INFINITY
