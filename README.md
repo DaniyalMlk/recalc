@@ -538,6 +538,43 @@ Every regression function runs through one fit. `SLOPE`, `LINEST`, `TREND`,
 re-derivations, which is why the tests can check them against each other and
 expect exact agreement rather than approximate.
 
+**`LOGEST` and `GROWTH` are the same fit with a transform either side.**
+`y = b · m₁^x₁ · m₂^x₂ · …` becomes a plain multiple regression once both sides
+are logged, so these are the linear pair with the log taken on the way in and
+the exponential on the way out — not a second fitting routine. `LOGEST` is the
+exponential of `LINEST` on the logged outcome, bit for bit, and `GROWTH` the
+exponential of `TREND` on it. Everything in a `LOGEST` statistics block below
+the first row is the log-space fit's, untouched: the standard errors are the
+errors on the *exponents*, on `ln m` rather than on `m`, and exponentiating one
+does not give the other.
+
+```
+=LOGEST(B1:B6, A1:A6)         the multiplier and the constant, across one row
+=GROWTH(B1:B6, A1:A6, 7)      the curve at a point the data does not cover
+```
+
+**That transform changes what is being minimised, and the change is the
+interesting part.** Least squares on `ln y` makes every residual a *ratio*
+rather than a difference, so a point predicted at half its value counts the
+same whether the value is 2 or 2,000,000. The curve `GROWTH` draws therefore
+has the smallest squared *relative* error, and it is **not** the exponential
+with the smallest squared error in `y`. Those are two different curves, and how
+different depends on the spread of the outcome. Measured against a search for
+the absolute optimum:
+
+| outcome spans | fitted curve's squared error in `y` | absolute optimum's squared error in `ln y` |
+| --- | --- | --- |
+| under 2x | within 1% of the optimum | within 1% |
+| about 7x | 8% worse | 11% worse |
+| about 100x | 12.7 times worse | 38.8 times worse |
+
+Each wins decisively on its own criterion once the data has any spread in it.
+Which one is wanted depends on the question — a forecast judged in percentage
+terms wants the relative fit, which is what spreadsheets have always given —
+but "the best-fitting exponential" without qualification names the wrong curve.
+A non-positive outcome is refused rather than dropped, since dropping it would
+answer a different question with nothing to show that it had.
+
 From the shell, `.regress` lays the same fit out the way a summary is read
 rather than the way `LINEST` returns it:
 
@@ -1211,8 +1248,9 @@ than a wait.
 - `LINEST` refuses linearly dependent predictors rather than dropping columns
   to the rank of the design matrix, which is what a rank-revealing
   factorisation would allow.
-- `LOGEST` and `GROWTH`, the exponential counterparts of `LINEST` and `TREND`,
-  are not implemented.
+- `LOGEST` and `GROWTH` are the only non-linear fits. A power curve
+  (`y = b · x^m`, which is a log on both sides rather than one) has no
+  function of its own.
 - Omitted arguments (`IF(A1,,2)`) are a parse error.
 - Only one sheet; there are no cross-sheet references.
 - Scenarios are not serialised: they live for the length of a session, and CSV

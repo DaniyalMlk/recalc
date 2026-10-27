@@ -278,3 +278,33 @@ tree green and the public API usable.
       caught by a single test apiece
 - [x] A row on the front page carrying both halves, since the agreement alone
       would be vacuous
+
+## Phase 26 — The exponential pair
+
+- [x] `LOGEST` reporting the multipliers of `y = b · m₁^x₁ · m₂^x₂ · …`, over
+      one predictor or several
+- [x] `GROWTH` evaluating the curve at the points given or at new ones, with
+      `TREND`'s reading of `new_x` shared rather than copied
+- [x] Both as the linear pair with a transform either side rather than a second
+      fitting routine, which makes them exact identities against `LINEST` and
+      `TREND` on the logged outcome rather than second opinions
+- [x] `const` FALSE giving exactly 1, since the constraint is that the
+      log-space intercept is zero
+- [x] The statistics block below its first row left as the log fit's, with the
+      standard errors named as the errors on the exponents — and the test
+      asserting they are *not* their own exponentials, so the agreement is a
+      statement rather than a coincidence
+- [x] A non-positive outcome refused rather than dropped
+- [x] What the fit minimises measured rather than described: against a
+      golden-section search for the exponential with the smallest squared
+      error in `y`, the fitted curve is 12.7 times worse on that criterion on
+      a series spanning two orders of magnitude, and the absolute optimum is
+      38.8 times worse on squared error in the log
+- [x] The other half of that figure, so it reads in proportion: under a spread
+      of 2 the two criteria pick curves within 1% of each other, and at a
+      spread of 7 within 8%
+- [x] An exactly exponential series as the control, where a ratio of errors
+      would be meaningless and both are bounded instead
+- [x] Five ways of getting the transform wrong confirmed to fail, including
+      exponentiating the standard errors with the coefficients — caught by one
+      test, which is the one that says which space they live in
