@@ -370,3 +370,32 @@ tree green and the public API usable.
 - [x] Six ways of getting it wrong confirmed to fail, two caught by a single
       test apiece; a seventh attempt was a no-op and had to be rewritten
       before it tested anything
+
+## Phase 28 — An argument written as nothing
+
+- [x] A node for an omitted argument, produced where the parser used to fail,
+      and only inside an argument list — `=,` and `1+,2` are still not
+      formulas
+- [x] Evaluating to a blank rather than to a zero or an empty string, so every
+      function that already reads a blank argument handles an omitted one
+      without being told this exists
+- [x] The claim stated as an identity rather than a list of cases: sixteen
+      pairs where one formula writes a gap and the other references an empty
+      cell, agreeing in value and in display
+- [x] The pairs asserted to produce more than four distinct answers, since a
+      list that all returned the same thing would pass vacuously
+- [x] The three comparisons that separate a blank from a zero and from an
+      empty string, which is the same non-transitive triple a blank cell
+      produces, reached through a formula
+- [x] The distinction between coercing a blank and skipping one: `IF` reads a
+      blank condition as false, `AND` and `OR` ignore a blank, as they already
+      do over a range with empty cells
+- [x] A gap distinguished from an absence where the function's default is not
+      the blank's coercion — `VLOOKUP`'s fourth argument defaults to TRUE, so
+      writing the gap asks for the exact match that leaving it out does not
+- [x] Arity still counting the gaps: `IF(,,,)` passes four and is refused
+- [x] `F()` still no arguments, distinguishable from `F(,)` passing two blanks
+- [x] Printing nothing back where nothing was written, and the reparse stable,
+      which is what an editor needs
+- [x] Five ways of getting it wrong confirmed to fail, including a gap that
+      evaluates to a zero and a printer that writes one

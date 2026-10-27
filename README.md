@@ -490,6 +490,36 @@ The example sheet reaches its net present value twice, once through `NPV` and
 once by summing a discounted column built from two spilled blocks. The two
 agree to the cent, and the sheet says so.
 
+## An argument written as nothing
+
+`=IF(A1,,2)` is ordinary spreadsheet writing, and so are `=ROUND(1.5,)` and
+`=SUM(,1)`. An argument written as nothing is not a missing argument: it is a
+**blank**, which this engine already has as a value, so the whole of it is a
+node the parser can produce where it used to fail.
+
+```
+=IF(A1,,2)       three arguments, the middle one blank
+=SUM(1,)         two arguments, the second blank — not one argument
+=SUM()           no arguments at all, which is still an error for SUM
+```
+
+What that buys is that nothing else had to be told. A gap behaves exactly as a
+reference to an empty cell would, across the whole function surface — sixteen
+pairs of formulas, one written with a gap and one pointing at an empty cell,
+are asserted to agree in value and in display. `IF` coerces a blank condition
+to false; `AND` and `OR` *skip* a blank rather than reading it as false, which
+is how they already behave over a range with empty cells; `ROUND`'s digit count
+takes the zero a blank coerces to.
+
+A gap is **not** the same as leaving the argument out, and the difference shows
+where a function's default is not the blank's coercion: `VLOOKUP`'s fourth
+argument defaults to TRUE, so `=VLOOKUP(25,F1:G3,2)` finds the approximate
+match and `=VLOOKUP(25,F1:G3,2,)` asks for an exact one and gets `#N/A`.
+
+Arity still counts the gaps, so `=IF(,,,)` passes four arguments and is refused
+for it, and printing puts nothing back where nothing was written — `IF(A1,,2)`
+prints as itself rather than as `IF(A1,0,2)`, which is what an editor needs.
+
 ## Sorting, filtering and deduplicating a table
 
 `SEQUENCE` and `TRANSPOSE` exist because they make the spill path reachable —
@@ -1335,7 +1365,10 @@ than a wait.
 - `LOGEST` and `GROWTH` are the only non-linear fits. A power curve
   (`y = b · x^m`, which is a log on both sides rather than one) has no
   function of its own.
-- Omitted arguments (`IF(A1,,2)`) are a parse error.
+- A formula whose result is a blank shows as empty rather than as a zero.
+  Some spreadsheets render `=IF(TRUE,,2)` as `0`; here the result is a blank
+  and is reported as one, since `ISBLANK` on it says TRUE and showing `0`
+  would make the display disagree with that.
 - Only one sheet; there are no cross-sheet references.
 - Scenarios are not serialised: they live for the length of a session, and CSV
   has nowhere to put them.
