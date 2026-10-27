@@ -6,3 +6,4 @@ graphify-out/
 .DS_Store
 web/dist/
 *.tgz
+site/

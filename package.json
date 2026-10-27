@@ -55,7 +55,8 @@
     "repl": "tsx src/cli.ts",
     "bench": "tsx bench/recalc.bench.ts",
     "web": "vite --config web/vite.config.ts",
-    "bench:whatif": "tsx bench/whatif.bench.ts"
+    "bench:whatif": "tsx bench/whatif.bench.ts",
+    "docs": "tsx docs/build-site.ts"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

@@ -13,12 +13,16 @@ formula depends on, and recalculates only what an edit actually invalidated.
    └── comparison against a scalar, with spreadsheet coercion rules
 ```
 
+**[The engine running in a browser](https://daniyalmlk.github.io/recalc/)**, with
+the evidence table below it. The grid on that page imports the engine from
+source, so what recalculates there is what recalculates here.
+
 ## Status
 
 Every phase in [ROADMAP.md](ROADMAP.md) is complete: the formula grammar, the
-reference model, the dependency graph, the evaluator, a function library of 158
-functions including financial, date, amortisation, bond, matrix and regression
-packs, day-count
+reference model, the dependency graph, the evaluator, a function library of 205
+functions including financial, date, amortisation, bond, matrix, regression,
+distribution, inference and table packs, day-count
 conventions, debt schedules, CSV interchange, named ranges, a
 benchmark harness, structural editing that rewrites every formula in the sheet
 when rows and columns move, block editing with fill, clipboard and undo, number
