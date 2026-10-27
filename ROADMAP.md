@@ -399,3 +399,27 @@ tree green and the public API usable.
       which is what an editor needs
 - [x] Five ways of getting it wrong confirmed to fail, including a gap that
       evaluates to a zero and a printer that writes one
+
+## Phase 29 — A site, with the engine on it
+
+- [x] A generator in `docs/` that renders the page from the evidence gate and
+      the function registry, so no figure on the page was typed by hand
+- [x] The web demo published alongside it rather than built by CI and thrown
+      away, importing the engine from source so the grid on the page is the
+      library
+- [x] The demo's own palette inherited unchanged, so the page and the thing it
+      is about read as one piece of work
+- [x] A test that fails in both directions — a row the gate produces and the
+      page omits, and a figure the page quotes that the gate does not produce —
+      and that counts the table's rows rather than checking its header
+- [x] The function count asserted against the registry, which caught the front
+      page claiming 158 where there are 205
+- [x] Links checked as relative, since a project site is served from a subpath
+      and an absolute one resolves to the account root
+- [x] The page's admission that its own install line does not work yet pinned
+      by a test, so removing it needs the tag to exist
+- [x] A workflow publishing from the default branch only, running the
+      agreement tests before the upload rather than after
+- [x] Looked at rather than assumed: loaded at three widths in a browser,
+      screenshotted and read, which is how the footer's broken measure, the
+      demo frame's border and an unreadable table at phone width were found
