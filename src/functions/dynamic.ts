@@ -50,14 +50,17 @@ function linesOf(block: Matrix, byColumn: boolean): readonly (readonly Value[])[
 /**
  * Lines back into a block, undoing the transpose that made them lines.
  *
- * `#CALC!` rather than an empty matrix: a result with no lines has no anchor
- * cell, so it has nowhere to be.
+ * The one place an empty answer is decided, so that there is one place to be
+ * right. `#CALC!` rather than an empty matrix: a result with no lines has no
+ * anchor cell, so it has nowhere on the sheet to be. `FILTER` is the only
+ * caller that asks the question earlier, because its third argument gives it
+ * something else to say.
  */
 function blockOf(
   lines: readonly (readonly Value[])[],
   byColumn: boolean,
 ): Matrix | FormulaError {
-  if (lines.length === 0 || lines[0]?.length === 0) return CALC_ERROR;
+  if (lines.length === 0 || (lines[0]?.length ?? 0) === 0) return CALC_ERROR;
   const block = matrixOfRows(lines);
   return byColumn ? transposeMatrix(block) : block;
 }
@@ -143,7 +146,6 @@ defineFunction({
 
     const lines = linesOf(block, byColumn);
     const width = lines[0]?.length ?? 0;
-    if (lines.length === 0 || width === 0) return CALC_ERROR;
 
     // The index counts across a line, so it is a column when sorting rows and
     // a row when sorting columns — which is the same number either way once
@@ -179,7 +181,6 @@ defineFunction({
     const first = argMatrix(args[1]!);
     const byColumn = first.rows === 1 && first.cols > 1;
     const lines = linesOf(block, byColumn);
-    if (lines.length === 0 || (lines[0]?.length ?? 0) === 0) return CALC_ERROR;
 
     const keys: SortKey[] = [];
     for (let index = 1; index < args.length; index += 2) {
@@ -266,7 +267,6 @@ defineFunction({
     if (isFormulaError(onlyOnce)) return onlyOnce;
 
     const lines = linesOf(block, byColumn);
-    if (lines.length === 0 || (lines[0]?.length ?? 0) === 0) return CALC_ERROR;
 
     // Compared with `compareValues` rather than hashed, so that two lines are
     // the same here exactly when the sheet's `=` says they are: case-blind in
@@ -285,10 +285,11 @@ defineFunction({
       else existing.count += 1;
     }
 
-    const kept = distinct
-      .filter((entry) => (onlyOnce ? entry.count === 1 : true))
-      .map((entry) => entry.line);
-    if (kept.length === 0) return CALC_ERROR;
-    return blockOf(kept, byColumn);
+    return blockOf(
+      distinct
+        .filter((entry) => (onlyOnce ? entry.count === 1 : true))
+        .map((entry) => entry.line),
+      byColumn,
+    );
   },
 });
