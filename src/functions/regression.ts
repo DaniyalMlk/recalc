@@ -291,6 +291,36 @@ defineFunction({
   },
 });
 
+/**
+ * The cases a fitted-value function is asked about.
+ *
+ * Shared by `TREND` and `GROWTH`, which differ only in what they do with the
+ * fitted number — and the reading of `new_x` is where the fiddly part is, so
+ * having it in one place is the point.
+ */
+function casesFor(
+  r: Regression,
+  newXArg: Arg | undefined,
+): number[][] | FormulaError {
+  // No new points asked for, so the answer is the fit at the points given.
+  if (newXArg === undefined) return r.obs.x.map((row) => [...row]);
+
+  const newX = numericBlock(newXArg);
+  if (isFormulaError(newX)) return newX;
+  if (newX.length === 0) return VALUE_ERROR;
+
+  // A single predictor may be given as a row or a column; more than one has
+  // to be laid out one case per row, matching how known_x was read.
+  const cases =
+    r.k === 1 && (newX[0]?.length ?? 0) !== 1
+      ? newX.flat().map((v) => [v])
+      : newX;
+  if ((cases[0]?.length ?? 0) !== r.k) {
+    return err("#REF!", `each new case needs ${r.k} predictor(s)`);
+  }
+  return cases;
+}
+
 defineFunction({
   name: "TREND",
   description:
@@ -300,28 +330,107 @@ defineFunction({
   call(args) {
     const r = fitFrom(args[0]!, args[1], args[3]);
     if (isFormulaError(r)) return r;
-
-    if (args[2] === undefined) {
-      // No new points asked for, so the answer is the fit at the points given,
-      // laid out the way known_y was.
-      const fitted = r.obs.x.map((row) => predict(r, row));
-      return matrix(fitted.length, 1, fitted);
-    }
-
-    const newX = numericBlock(args[2]!);
-    if (isFormulaError(newX)) return newX;
-    if (newX.length === 0) return VALUE_ERROR;
-
-    // A single predictor may be given as a row or a column; more than one has
-    // to be laid out one case per row, matching how known_x was read.
-    const cases =
-      r.k === 1 && (newX[0]?.length ?? 0) !== 1
-        ? newX.flat().map((v) => [v])
-        : newX;
-    if ((cases[0]?.length ?? 0) !== r.k) {
-      return err("#REF!", `each new case needs ${r.k} predictor(s)`);
-    }
+    const cases = casesFor(r, args[2]);
+    if (isFormulaError(cases)) return cases;
     const fitted = cases.map((row) => predict(r, row));
+    return matrix(fitted.length, 1, fitted);
+  },
+});
+
+// ---------------------------------------------------------------------------
+// The exponential pair
+// ---------------------------------------------------------------------------
+
+/**
+ * `y = b · m₁^x₁ · m₂^x₂ · …`, fitted by taking the log of both sides.
+ *
+ * Logging turns the model into `ln y = ln b + x₁ ln m₁ + …`, which is a plain
+ * multiple regression, so these two functions are the linear pair with a
+ * transform on the way in and its inverse on the way out rather than a second
+ * fitting routine.
+ *
+ * **The transform changes what is being minimised, and that is not a detail.**
+ * Least squares on `ln y` makes the residuals *ratios* rather than differences:
+ * a point predicted at half its value counts the same whether the value is 2
+ * or 2,000,000. So the curve these draw is the one with the smallest squared
+ * *relative* error, and it is not the exponential with the smallest squared
+ * error in `y` — the two are different curves, and on a series with any spread
+ * in it they are visibly different. Which is wanted depends on the question,
+ * and spreadsheets have always answered the relative one, but a reader who
+ * takes `GROWTH` for "the best-fitting exponential" without qualification has
+ * the wrong curve.
+ *
+ * A non-positive `known_y` has no log, so it is refused rather than dropped:
+ * dropping it would answer a different question with no sign that it had.
+ */
+function loggedObservations(obs: Observations): Observations | FormulaError {
+  const y: number[] = [];
+  for (const value of obs.y) {
+    if (!(value > 0)) {
+      return err("#NUM!", "an exponential fit needs every known_y above zero");
+    }
+    y.push(Math.log(value));
+  }
+  return { x: obs.x, y, k: obs.k };
+}
+
+/** The log-space fit the exponential pair is read off. */
+function exponentialFitFrom(
+  yArg: Arg,
+  xArg: Arg | undefined,
+  constArg: Arg | undefined,
+): Regression | FormulaError {
+  const obs = observationsOf(yArg, xArg);
+  if (isFormulaError(obs)) return obs;
+  const logged = loggedObservations(obs);
+  if (isFormulaError(logged)) return logged;
+  const withIntercept = flagArg(constArg);
+  if (isFormulaError(withIntercept)) return withIntercept;
+  return regress(logged, withIntercept);
+}
+
+defineFunction({
+  name: "LOGEST",
+  description:
+    "Exponential fit: LOGEST(known_y, [known_x], [const], [stats]).",
+  minArgs: 1,
+  maxArgs: 4,
+  call(args) {
+    const r = exponentialFitFrom(args[0]!, args[1], args[2]);
+    if (isFormulaError(r)) return r;
+    const wantStats = flagArg(args[3], false);
+    if (isFormulaError(wantStats)) return wantStats;
+
+    // The multipliers are the exponentials of the log-space coefficients.
+    // Forced through `b = 1`, the intercept in log space is zero and its
+    // exponential is one, which is the constraint rather than a special case.
+    const multipliers = reportedCoefficients(r).map((value) => Math.exp(value));
+    if (!wantStats) {
+      return matrix(1, multipliers.length, multipliers);
+    }
+
+    // Everything below the first row is the log-space fit's, unchanged. The
+    // standard errors in particular belong to the *exponents*: the error on
+    // `ln m`, not on `m`, and exponentiating one does not give the other.
+    const stats = linestStatistics(r);
+    const values = [...stats.values];
+    for (const [index, value] of multipliers.entries()) values[index] = value;
+    return matrix(stats.rows, stats.cols, values);
+  },
+});
+
+defineFunction({
+  name: "GROWTH",
+  description:
+    "Fitted values along an exponential fit: GROWTH(known_y, [known_x], [new_x], [const]).",
+  minArgs: 1,
+  maxArgs: 4,
+  call(args) {
+    const r = exponentialFitFrom(args[0]!, args[1], args[3]);
+    if (isFormulaError(r)) return r;
+    const cases = casesFor(r, args[2]);
+    if (isFormulaError(cases)) return cases;
+    const fitted = cases.map((row) => Math.exp(predict(r, row)));
     return matrix(fitted.length, 1, fitted);
   },
 });
