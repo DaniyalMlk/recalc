@@ -45,6 +45,7 @@ which runs in CI and exits non-zero if any of them moves:
 | `LINEST` on one predictor against `SLOPE` and `INTERCEPT`, and `RSQ` against `CORREL` squared | 0 in the slope and the intercept; below 1e-15 in R-squared |
 | A 360-month loan of 200,000 paid off at the instalment `PMT` returns | below 1e-6, of the 200,000 it started at, after every payment — a relative residue under 1e-13 |
 | `MINVERSE(A)` multiplied back by `A`, against the identity matrix | below 1e-14, in every entry |
+| `COUPPCD` and `COUPNCD` against a published transcript of a reference spreadsheet, over month ends and the days either side of them | exact agreement on all 24 cases — 4 month ends under the end-of-month rule and 20 neighbours that must stay off it |
 
 **The cost rows are counts, not durations.** Milliseconds are a statement about
 the machine they were measured on and can be asserted nowhere else — which is
@@ -64,15 +65,26 @@ the way that matters. The two agreeing over four shapes is a row of its own.
 
 The gate was checked by breaking the thing it guards. Making one call site
 recalculate from every cell instead of from the edited ones — the regression
-the whole design exists to avoid — fails three of the seven rows and takes the
+the whole design exists to avoid — fails three of the eight rows and takes the
 isolated-edit row from 1 evaluated cell to 100,001.
+
+**One row's reference is not this package.** Every other row above compares the
+engine with arithmetic the engine is made of, which is the right way to check a
+calculation and no way at all to check a *convention*: a bond schedule built on
+the wrong rule still closes its periods, still counts its coupons, and still
+satisfies every identity the module can state about itself. The coupon row is
+checked against a transcript of another implementation's output instead, and
+half of its cases are there to say where the end-of-month rule stops rather
+than that it exists — a rule applied one day too widely passes a table of month
+ends alone and fails two of these.
 
 **An identity says zero; a residue gets a bound.** `STDEV.P` over the textbook
 set is 2 exactly, and on one predictor `LINEST` is not a second opinion about
 `SLOPE` but the same arithmetic reached another way, so both say zero and a
 tolerance there would hide a real regression. The amortisation and matrix rows
 are floating-point residue and publish bounds instead, since the digits of a
-residue are not portable.
+residue are not portable. A coupon date is neither: it is a day, so its row is
+a count of cases rather than a tolerance.
 
 ## Installing it
 
@@ -366,6 +378,22 @@ matures. Each date is derived from maturity directly rather than stepped from
 the one before it, so a bond maturing on the 31st still pays on the 31st of
 every long month instead of walking itself off month ends one February at a
 time.
+
+**A month-end maturity anchors the whole schedule to month ends.** Maturity
+alone decides the rule. Inside its month, a maturity keeps its day of the month
+and clamps where the target month is short: a bond maturing on the 30th pays on
+the 30th, and on the 28th or 29th of a February. *On* its month's last day, it
+pays on month ends — 28 February pairs with 31 August, not with 28 August,
+which is the convention a month-end bond is issued under and the one
+`YEARFRAC` basis 0 already assumes when it makes that pair a clean 180 days.
+
+Without that second rule, clamping gets a maturity on the 31st right by
+accident — 31 clamped into a 30-day month is that month's end — and every other
+month end wrong, so two bonds both maturing on a month end would be scheduled
+under two conventions chosen by which month it happened to be. Only one basis
+can see the difference in a price: actual/actual is the only one that measures
+the coupon period it is in, and on the rest the period length is a constant, so
+a wrong next coupon date shows up in `COUPNCD` and nowhere else.
 
 **`COUPDAYSNC` is derived, not measured.** The price formula divides both ends
 by the period length and treats the results as a position in `[0, 1]`. Measuring
@@ -1140,7 +1168,10 @@ than a wait.
 
 ## Known gaps
 
-- No CI is configured, so the suite and the benchmark run locally only.
+- The benchmark is not run in continuous integration, only locally: its figures
+  are a statement about one machine and nothing can be asserted of them
+  elsewhere. The suite, the type check, the build and the evidence gate do run
+  there, across the Node range `engines` claims.
 - Implicit intersection is not implemented. A block in a position that needs
   one value is `#VALUE!` rather than a silent pick from the calling row.
 - A block cannot be entered over a range the way a legacy array formula was.
@@ -1171,9 +1202,6 @@ than a wait.
   shows, but that text does not read back in as the same numbers.
 - A debt schedule is built for payments at the end of each period; an annuity
   due is available per period through `IPMT` and `PPMT` but not as a table.
-- Bond coupon schedules follow the day of the month maturity falls on, with no
-  end-of-month rule: a bond maturing on 28 February pays on the 28th, not on
-  the month end, of every other period.
 - `ACCRINT` accrues from issue to settlement as one span rather than summing
   quasi-coupon periods. The two agree on the 30/360 bases and can differ by a
   day's interest on the actual ones.
