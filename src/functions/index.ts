@@ -10,6 +10,7 @@ import "./date.js";
 import "./amortisation.js";
 import "./bonds.js";
 import "./arrays.js";
+import "./dynamic.js";
 import "./matrix.js";
 import "./regression.js";
 import "./distributions.js";
