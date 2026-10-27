@@ -200,10 +200,26 @@ describe("QR factorisation", () => {
     expectClose(rtr, xtx, 9);
   });
 
-  it("notices a dependent column", () => {
-    // The second column is twice the first.
-    const { rankDeficient } = qrFactor([[1, 2], [2, 4], [3, 6]], [1, 2, 3]);
+  it("names the columns that form a basis, not just that one did not", () => {
+    // The second column is twice the first, so the first is kept and the
+    // second is dropped: the columns are taken in order, which makes the
+    // choice the caller's rather than the floating point's.
+    const { rankDeficient, kept, r } = qrFactor([[1, 2], [2, 4], [3, 6]], [1, 2, 3]);
     expect(rankDeficient).toBe(true);
+    expect(kept).toEqual([0]);
+    // The triangle is built over the basis, so it is 1x1 rather than 2x2 with
+    // a zero pivot — which is what lets it be used rather than only inspected.
+    expect(r.length).toBe(1);
+    expect(Math.abs(r[0]![0]!)).toBeGreaterThan(0);
+  });
+
+  it("keeps the earlier column of a dependent pair, whichever way round", () => {
+    expect(qrFactor([[1, 2], [2, 4], [3, 6]], [1, 2, 3]).kept).toEqual([0]);
+    expect(qrFactor([[2, 1], [4, 2], [6, 3]], [1, 2, 3]).kept).toEqual([0]);
+    // Three columns where every one is a combination of the other two: the
+    // first two are kept, since by then the third adds nothing.
+    const total = [[1, 2, 3], [2, 1, 3], [4, 1, 5], [1, 5, 6]];
+    expect(qrFactor(total, [1, 2, 3, 4]).kept).toEqual([0, 1]);
   });
 });
 
@@ -265,8 +281,38 @@ describe("least squares", () => {
     expect(fit.coefficients[0]!).toBeCloseTo(7, 5);
   });
 
-  it("refuses a design with a dependent column", () => {
-    expect(leastSquares([[1, 2], [1, 2], [1, 2]], [1, 2, 3])).toBeNull();
+  it("drops a dependent column rather than refusing the fit", () => {
+    // A dependent column leaves the coefficients undetermined and the fitted
+    // values untouched, so the fit is reported over a basis and the column
+    // outside it carries the zero it contributes.
+    const fit = leastSquares([[1, 2], [1, 2], [1, 2]], [1, 2, 3])!;
+    expect(fit).not.toBeNull();
+    expect(fit.rank).toBe(1);
+    expect(fit.coefficients[1]).toBe(0);
+    // No standard error rather than one of zero, which would read as
+    // measured and exactly nothing.
+    expect(Number.isNaN(fit.variance[1]!)).toBe(true);
+    expect(Number.isNaN(fit.variance[0]!)).toBe(false);
+  });
+
+  it("leaves the fitted values alone when it drops a column", () => {
+    // The identity that says dropping was the right thing: the projection of
+    // y onto the column space does not depend on how the space is spanned, so
+    // this is zero rather than nearly.
+    const design = [[1, 1], [1, 2], [1, 3], [1, 4], [1, 5]];
+    const widened = design.map((row) => [...row, 2 * row[1]!]);
+    const y = [2, 5, 4, 9, 8];
+    const narrow = leastSquares(design, y)!;
+    const wide = leastSquares(widened, y)!;
+    expect(wide.rank).toBe(2);
+    expect(wide.ssResidual).toBe(narrow.ssResidual);
+    for (const [index, residual] of narrow.residuals.entries()) {
+      expect(wide.residuals[index]).toBe(residual);
+    }
+    // And the coefficients of the columns that survived are the same numbers.
+    expect(wide.coefficients[0]).toBe(narrow.coefficients[0]);
+    expect(wide.coefficients[1]).toBe(narrow.coefficients[1]);
+    expect(wide.coefficients[2]).toBe(0);
   });
 
   it("refuses a y of the wrong length", () => {
