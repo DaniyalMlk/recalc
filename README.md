@@ -46,6 +46,7 @@ which runs in CI and exits non-zero if any of them moves:
 | A 360-month loan of 200,000 paid off at the instalment `PMT` returns | below 1e-6, of the 200,000 it started at, after every payment — a relative residue under 1e-13 |
 | `MINVERSE(A)` multiplied back by `A`, against the identity matrix | below 1e-14, in every entry |
 | `COUPPCD` and `COUPNCD` against a published transcript of a reference spreadsheet, over month ends and the days either side of them | exact agreement on all 24 cases — 4 month ends under the end-of-month rule and 20 neighbours that must stay off it |
+| The accrual `ACCRINT` sums over quasi-coupon periods against `YEARFRAC` over the same span, on the three bases where the two must agree | below 1e-15 over 6,540 cases — and past 2% on the two bases where they must not, which is why the agreement is a check |
 
 **The cost rows are counts, not durations.** Milliseconds are a statement about
 the machine they were measured on and can be asserted nowhere else — which is
@@ -77,6 +78,13 @@ checked against a transcript of another implementation's output instead, and
 half of its cases are there to say where the end-of-month rule stops rather
 than that it exists — a rule applied one day too widely passes a table of month
 ends alone and fails two of these.
+
+**An agreement no input could violate is not a check.** The accrual row says
+two things, and the second is what makes the first worth printing: the summed
+form comes back to `YEARFRAC` on the three bases whose coupon periods are all
+one length, and departs from it by more than 2% on the two where they are not.
+A row that reported only the agreement would be satisfied by an `ACCRINT` that
+had never been changed.
 
 **An identity says zero; a residue gets a bound.** `STDEV.P` over the textbook
 set is 2 exactly, and on one predictor `LINEST` is not a second opinion about
@@ -362,6 +370,7 @@ interest that accrued while they held it.
 =DURATION(DATE(2008,1,1), DATE(2016,1,1), 0.08, 0.09, 2, 1)            →   5.993775
 =MDURATION(DATE(2008,1,1), DATE(2016,1,1), 0.08, 0.09, 2, 1)           →   5.735670
 =ACCRINT(DATE(2008,3,1), DATE(2008,8,31), DATE(2008,5,1), 0.1, 1000, 2, 0) → 16.666667
+=ACCRINT(DATE(2008,3,1), DATE(2008,8,31), DATE(2008,5,1), 0.1, 1000, 2, 1) → 16.576087
 ```
 
 Where settlement sits inside its coupon period is the whole problem, and the
@@ -369,7 +378,7 @@ coupon family answers it: `COUPPCD` and `COUPNCD` for the dates either side,
 `COUPNUM` for how many coupons are left, and `COUPDAYBS`, `COUPDAYS`,
 `COUPDAYSNC` for the position within the period on a chosen basis.
 
-Three things the implementation is careful about.
+Five things the implementation is careful about.
 
 **Coupon dates are generated backwards from maturity.** Counting forwards from
 issue leaves the last period a stub, and a bond's last period is the one that is
@@ -400,6 +409,26 @@ by the period length and treats the results as a position in `[0, 1]`. Measuring
 each end independently on a 30/360 basis lets that pair miss 1 by a day, and the
 discount exponent then steps in a way nothing in the bond did. Subtracting makes
 `COUPDAYBS + COUPDAYSNC = COUPDAYS` exact.
+
+**An accrual is broken at every quasi-coupon date it crosses.** Interest
+between two dates that are not coupon dates is still quoted as a fraction of a
+coupon period — so many days of a period that is so many days long — so a
+stretch that crosses one of the dates a coupon *would* fall on crosses into a
+period of a different length, and the two pieces cannot share a denominator.
+`ACCRINT` sums them instead, which is what makes its first-interest date matter:
+that date is what anchors the periods. Moving it over a 1 March to 1 May
+accrual spans 16.576 to 16.758 on actual/actual, 1.1% of the figure, with
+nothing else changed.
+
+Which bases that moves is not the obvious half. Actual/360, actual/365 and
+30/360 European divide by a constant period length and count days additively,
+so the pieces telescope back to one span exactly — a residue below 1e-15 over a
+6,540-case sweep. Actual/actual is the only basis that measures the period it is
+in, and runs −0.82% to +2.53% of the single span. 30/360 US moves too, for an
+unrelated reason: it is the one basis whose day count is not a property of the
+stretch alone, since it pulls a 31st back to a 30th only when the other end is
+already at 30, and treats a February month end as a 30th. Splitting a span
+there changes the total in 188 of those 6,540 cases, by −4 to +1 days.
 
 **The last coupon period prices differently.** With more than one coupon left,
 each flow is discounted at the compounded periodic yield. With exactly one left
@@ -1259,9 +1288,6 @@ than a wait.
   shows, but that text does not read back in as the same numbers.
 - A debt schedule is built for payments at the end of each period; an annuity
   due is available per period through `IPMT` and `PPMT` but not as a table.
-- `ACCRINT` accrues from issue to settlement as one span rather than summing
-  quasi-coupon periods. The two agree on the 30/360 bases and can differ by a
-  day's interest on the actual ones.
 - Names can only be defined from the library or the shell, not from the grid.
 - Reference highlighting outlines only references written out in the formula.
   A name is underlined in the formula bar and resolved in the inspector, but

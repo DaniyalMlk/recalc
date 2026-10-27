@@ -251,6 +251,33 @@ tree green and the public API usable.
       rule caught only by the neighbour rows
 - [x] A row on the front page, as a count of cases rather than a tolerance
 
+## Phase 24 — An accrual summed over quasi-coupon periods
+
+- [x] A quasi-coupon schedule anchored on the first-interest date, from the
+      same generator a priced bond's schedule uses, so the end-of-month rule
+      reaches the stub period too
+- [x] Spans that tile the accrual exactly — no gap, no overlap — which is what
+      makes summing them a day count rather than an approximation of one
+- [x] `ACCRINT` taking the first-interest date it previously read, validated
+      and discarded, with a comment saying it could not matter
+- [x] The size of that: moving the date over one accrual spans 16.576 to
+      16.758 on actual/actual, 1.1% of the figure, nothing else changed
+- [x] Which bases this moves, measured rather than assumed. The front page had
+      both halves wrong
+- [x] Actual/360, actual/365 and 30/360 European telescoping back to one span,
+      asserted as an integer identity on the day counts and a residue below
+      1e-15 on the accrual
+- [x] Actual/actual as the only basis that measures the period it is in, at
+      −0.82% to +2.53% of the single span
+- [x] 30/360 US moving for an unrelated reason — its day count is not a
+      property of the stretch alone — in 188 of 6,540 cases, by −4 to +1 days
+- [x] The eighth argument, saying whether a settlement past the first interest
+      date accrues from issue or from that date, and agreeing with itself
+      anywhere at or before it
+- [x] Six ways of reintroducing the defect confirmed to fail, two of them
+      caught by a single test apiece
+- [x] A row on the front page carrying both halves, since the agreement alone
+      would be vacuous
 ## Phase 25 — Sorting, filtering and deduplicating a table
 
 - [x] `SORT` over a block's own line, either orientation, either direction
