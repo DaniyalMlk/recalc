@@ -23,6 +23,7 @@
  */
 
 import { Workbook } from "../src/engine/workbook.js";
+import { COUPON_REFERENCE } from "./coupon-reference.js";
 
 export interface Check {
   /** The row label, which is also the left-hand cell of the README table. */
@@ -333,6 +334,56 @@ function regressionAgreesWithItself(): Check {
   };
 }
 
+/**
+ * The coupon schedule against a reference that is not this package.
+ *
+ * The only row here whose reference comes from outside, and the only one that
+ * could catch a *convention* error rather than an arithmetic one: a schedule
+ * built on the wrong rule still closes its periods, still counts its coupons
+ * and still agrees with every identity the module can state about itself.
+ *
+ * Reported as an exact count of cases rather than as a tolerance, because a
+ * coupon date is a day and either is or is not the right one. The cases that
+ * matter are the ones either side of each month end — half the table is there
+ * to say where the rule stops.
+ */
+function scheduleMatchesReference(): Check {
+  const book = new Workbook();
+  const read = (formula: string): number => {
+    book.setCell("Z100", formula);
+    const seen = book.getValue("Z100");
+    if (typeof seen !== "number") {
+      throw new Error(`${formula} produced ${JSON.stringify(seen)}`);
+    }
+    return seen;
+  };
+
+  const wrong: string[] = [];
+  let monthEnds = 0;
+  for (const row of COUPON_REFERENCE) {
+    const { settlement, maturity, frequency, basis } = row;
+    const previous = read(`=COUPPCD(${settlement},${maturity},${frequency},${basis})`);
+    const next = read(`=COUPNCD(${settlement},${maturity},${frequency},${basis})`);
+    if (previous !== row.previous) wrong.push(`${row.block}: COUPPCD`);
+    if (next !== row.next) wrong.push(`${row.block}: COUPNCD`);
+  }
+  // One maturity per block sits on a month end; the rest are its neighbours.
+  monthEnds = new Set(COUPON_REFERENCE.map((row) => row.block)).size;
+
+  const ok = wrong.length === 0;
+  return {
+    label:
+      "`COUPPCD` and `COUPNCD` against a published transcript of a reference " +
+      "spreadsheet, over month ends and the days either side of them",
+    result:
+      `exact agreement on all ${COUPON_REFERENCE.length} cases — ` +
+      `${monthEnds} month ends under the end-of-month rule and ` +
+      `${COUPON_REFERENCE.length - monthEnds} neighbours that must stay off it`,
+    ok,
+    ...(ok ? {} : { complaint: `disagreed on ${wrong.join(", ")}` }),
+  };
+}
+
 /** Every row of the evidence table, in the order the README prints them. */
 export function measure(): readonly Check[] {
   return [
@@ -343,6 +394,7 @@ export function measure(): readonly Check[] {
     regressionAgreesWithItself(),
     amortisationCloses(),
     inverseRoundTrip(),
+    scheduleMatchesReference(),
   ];
 }
 

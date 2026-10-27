@@ -225,3 +225,28 @@ tree green and the public API usable.
       in both directions
 - [ ] The trusted publisher registered on npm for `recalc-formula`. Until then
       the workflow is committed and no tag is pushed.
+
+## Phase 23 — The end-of-month rule in a coupon schedule
+
+- [x] Maturity as the only thing that decides the rule: on its month's last
+      day the whole schedule is pulled to month ends, anywhere else the day of
+      the month is kept and clamped
+- [x] The asymmetry that made this a defect rather than an omission — clamping
+      the 31st into a short month lands on that month's end, so a bond
+      maturing 31 August was already scheduled on month ends while one
+      maturing 30 September was not
+- [x] The convention stated where the schedule is generated, including that
+      `YEARFRAC` basis 0 already assumes it when it makes 28 February to
+      31 August a clean 180 days
+- [x] A reference from outside this package, since a schedule built on the
+      wrong rule closes its periods and counts its coupons perfectly well
+- [x] Each block of that reference walking a maturity through a month end and
+      out the other side, so the rule's boundary is pinned and not only its
+      interior
+- [x] Both halves of what moved: a wrong previous coupon is invisible on the
+      two 30/360 bases, which map a 31st to a 30th, and a wrong next coupon is
+      invisible on every basis but actual/actual, which is the only one that
+      measures the period it is in
+- [x] Five ways of reintroducing it confirmed to fail, the one-day-too-wide
+      rule caught only by the neighbour rows
+- [x] A row on the front page, as a count of cases rather than a tolerance
