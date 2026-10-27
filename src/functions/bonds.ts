@@ -19,11 +19,17 @@
 import { NUM_ERROR, isFormulaError } from "../engine/errors.js";
 import type { FormulaError } from "../engine/errors.js";
 import type { Value } from "../engine/value.js";
-import { isDayCountBasis, yearFraction } from "../date/daycount.js";
+import { toBoolean } from "../engine/value.js";
+import { basisDays, isDayCountBasis, yearFraction } from "../date/daycount.js";
 import type { DayCountBasis } from "../date/daycount.js";
-import { couponPosition, isCouponFrequency } from "../date/coupons.js";
+import {
+  couponPeriodDays,
+  couponPosition,
+  isCouponFrequency,
+  quasiCouponSpans,
+} from "../date/coupons.js";
 import type { CouponFrequency, CouponPosition } from "../date/coupons.js";
-import { defineFunction, numberArg } from "./registry.js";
+import { argValue, defineFunction, numberArg } from "./registry.js";
 import type { Arg } from "./registry.js";
 import { serialArg } from "./date.js";
 import { solveRate } from "./solver.js";
@@ -303,17 +309,56 @@ defineFunction({
   },
 });
 
+/**
+ * An accrual expressed in years, summed over the quasi-coupon periods it
+ * crosses rather than measured as one span.
+ *
+ * Interest between two dates that are not coupon dates is still quoted as a
+ * fraction of a coupon period: so many days of a period that is so many days
+ * long. When the stretch crosses a quasi-coupon date — one of the dates a
+ * coupon *would* fall on, extended back through the stub between issue and the
+ * first interest payment — it crosses into a period of a different length, and
+ * the two pieces cannot share a denominator.
+ *
+ * On four of the five bases this comes to exactly the same number as the
+ * single span, because their period length is a constant and their day counts
+ * are additive, so the pieces telescope. The two it moves are actual/actual,
+ * whose periods genuinely differ in length, and 30/360 US — whose February
+ * rule makes its day count *not* additive across a February month end, which
+ * is precisely where a quasi-coupon date falls.
+ */
+export function accruedYears(
+  from: number,
+  to: number,
+  firstInterest: number,
+  frequency: CouponFrequency,
+  basis: DayCountBasis,
+): number {
+  let periods = 0;
+  for (const span of quasiCouponSpans(from, to, firstInterest, frequency)) {
+    const length = couponPeriodDays(
+      span.periodStart,
+      span.periodEnd,
+      frequency,
+      basis,
+    );
+    if (length === 0) continue;
+    periods += basisDays(span.from, span.to, basis) / length;
+  }
+  return periods / frequency;
+}
+
 defineFunction({
   name: "ACCRINT",
   description: "Interest accrued on a bond from issue to settlement.",
   minArgs: 6,
-  maxArgs: 7,
+  maxArgs: 8,
   call(args) {
     const issue = serialArg(args[0]);
     if (isFormulaError(issue)) return issue;
-    // The first-interest date is read and validated but does not enter the
-    // result: interest accrues from issue, and the first coupon date only says
-    // when it is first paid out.
+    // The first-interest date anchors the quasi-coupon schedule the accrual is
+    // broken on, so it enters the result rather than merely saying when the
+    // money is first paid out.
     const first = serialArg(args[1]);
     if (isFormulaError(first)) return first;
     const settlement = serialArg(args[2]);
@@ -326,9 +371,14 @@ defineFunction({
     if (isFormulaError(frequency)) return frequency;
     const basis = basisArg(args, 6);
     if (isFormulaError(basis)) return basis;
+    // Whether a settlement past the first interest date accrues from issue or
+    // from that date. The two agree for any settlement at or before it, which
+    // is why the flag could not matter while the accrual was one span.
+    const fromIssue = args.length > 7 ? toBoolean(argValue(args[7]!)) : true;
     if (first <= issue) return NUM_ERROR;
     if (rate <= 0 || par <= 0 || settlement <= issue) return NUM_ERROR;
-    return guard(par * rate * yearFraction(issue, settlement, basis));
+    const start = !fromIssue && settlement > first ? first : issue;
+    return guard(par * rate * accruedYears(start, settlement, first, frequency, basis));
   },
 });
 
