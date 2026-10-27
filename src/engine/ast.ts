@@ -84,7 +84,20 @@ export interface GroupNode {
   readonly inner: Node;
 }
 
+/**
+ * An argument written as nothing: the gap in `IF(A1,,2)`.
+ *
+ * A node of its own rather than a blank literal, because it can only appear
+ * in an argument list — `=,` is not a formula and `1+,2` is not an expression
+ * — and because printing has to put nothing back where nothing was written.
+ * It evaluates to a blank, which is a value this engine already has.
+ */
+export interface OmittedNode {
+  readonly kind: "omitted";
+}
+
 export type Node =
+  | OmittedNode
   | NumberNode
   | StringNode
   | BooleanNode

@@ -2,6 +2,7 @@ import type {
   BinaryOperator,
   CallNode,
   Node,
+  OmittedNode,
   RangeNode,
   ReferenceNode,
   UnaryOperator,
@@ -225,7 +226,16 @@ class Parser {
     }
 
     for (;;) {
-      args.push(this.parseExpression(0));
+      // An argument written as nothing is an argument. `IF(A1,,2)` passes
+      // three, the middle one blank — which is different from passing two,
+      // and different again from `IF(A1,0,2)`, since a blank is not a zero.
+      // The empty list `F()` is handled above and is genuinely no arguments.
+      const ahead = this.peek().type;
+      args.push(
+        ahead === "comma" || ahead === "rparen"
+          ? ({ kind: "omitted" } satisfies OmittedNode)
+          : this.parseExpression(0),
+      );
       const next = this.advance();
       if (next.type === "comma") continue;
       if (next.type === "rparen") break;

@@ -85,6 +85,13 @@ export function evaluateArg(node: Node, context: EvalContext): Arg {
     case "group":
       return evaluateArg(node.inner, context);
 
+    case "omitted":
+      // A blank, not a zero and not an empty string. Every function that
+      // already reads a blank argument — a flag defaulting to true, a basis
+      // defaulting to 0, a lookup's approximate-match switch — therefore
+      // handles an omitted one without being told this exists.
+      return scalar(null);
+
     case "reference":
       return scalar(context.readCell(node.ref));
 
