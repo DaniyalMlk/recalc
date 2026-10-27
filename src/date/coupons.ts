@@ -14,7 +14,7 @@
  * is a coupon period" is a convention rather than a fact.
  */
 
-import { addMonths, daysBetween } from "./serial.js";
+import { addMonths, daysBetween, endOfMonth, isMonthEnd } from "./serial.js";
 import { basisDays } from "./daycount.js";
 import type { DayCountBasis } from "./daycount.js";
 
@@ -44,18 +44,47 @@ export interface CouponPosition {
 }
 
 /**
+ * True when a bond's schedule is anchored to month ends.
+ *
+ * The anchor is maturity and nothing else. A bond maturing 30 September pays
+ * on month ends; a bond maturing 29 September, in the same month, does not —
+ * one day apart on the calendar and a different convention, which is what
+ * makes this a predicate rather than a tolerance.
+ */
+export function isMonthEndSchedule(maturity: number): boolean {
+  return isMonthEnd(maturity);
+}
+
+/**
  * The `i`-th coupon date counting back from maturity.
  *
- * Always derived from maturity rather than stepped from the previous date, so
- * a bond maturing on the 31st does not walk itself off month ends: a single
- * clamp from the 31st into February is recoverable, a chain of them is not.
+ * Two rules, and maturity alone decides which. A maturity inside its month
+ * keeps its day of the month, clamped where the target month is short: a bond
+ * maturing on the 30th pays on the 30th, and on the 28th or 29th of a
+ * February. A maturity *on* its month's last day instead puts every coupon on
+ * a month end, which is the convention a month-end bond is issued under — 28
+ * February pairs with 31 August, not with 28 August.
+ *
+ * Without that second rule the first one produces the right answer for a
+ * maturity on the 31st and the wrong one for every other month end, since
+ * clamping the 31st into a short month happens to land on its end. Two bonds
+ * both maturing on a month end would then be put on schedules under two
+ * conventions, chosen by which month it happened to be. The engine's own
+ * day-count code assumes they are not: `YEARFRAC` basis 0 carries a February
+ * rule so that 28 February to 31 August is a clean 180 days, a rule written
+ * for a pair of dates the schedule would otherwise never generate.
+ *
+ * Either way the date is derived from maturity rather than stepped from its
+ * neighbour, so no clamp compounds: one clamp from the 31st into February is
+ * recoverable, a chain of them is not.
  */
 export function couponDateBack(
   maturity: number,
   frequency: CouponFrequency,
   steps: number,
 ): number {
-  return addMonths(maturity, (-12 / frequency) * steps);
+  const stepped = addMonths(maturity, (-12 / frequency) * steps);
+  return isMonthEndSchedule(maturity) ? endOfMonth(stepped) : stepped;
 }
 
 /**
