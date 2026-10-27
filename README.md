@@ -461,6 +461,63 @@ The example sheet reaches its net present value twice, once through `NPV` and
 once by summing a discounted column built from two spilled blocks. The two
 agree to the cent, and the sheet says so.
 
+## Sorting, filtering and deduplicating a table
+
+`SEQUENCE` and `TRANSPOSE` exist because they make the spill path reachable —
+one builds a block from nothing, one reshapes an existing one. These four exist
+because they are what someone writes on their own data.
+
+```
+=SORT(A1:C20, 3, -1)        the table by its third column, largest first
+=SORTBY(A1:C20, E1:E20)     the same table ordered by a column outside it
+=SORTBY(A1:C20, D1:D20, 1, E1:E20, -1)   second key breaks the first's ties
+=FILTER(A1:C20, C1:C20>100) the rows where the third column clears 100
+=FILTER(A1:C20, C1:C20>100, "none")      with something to show if none do
+=UNIQUE(A1:B20)             the distinct rows, first appearance kept
+=UNIQUE(A1:A20, FALSE, TRUE)             only the values appearing once
+```
+
+All four work on whole lines rather than cells — sorting a table by its third
+column has to carry the other columns along, and the distinct values of a table
+are its distinct rows. Each is written once over a list of lines and run either
+on the rows or on the transpose, so `by_col` costs a transpose rather than a
+second implementation. The sort index counts across a line, which means it
+names a column when sorting rows and a row when sorting columns: on a 4x3 block
+the bound is 3 one way round and 4 the other.
+
+**A sort is stable, and that is this function's promise rather than the host's.**
+`Array.prototype.sort` is specified as stable, but the guarantee here is that a
+later key speaks only where every earlier one ties and that lines tied on all of
+them keep their input order — so the original position is the final tiebreaker
+and the comparison never has to rely on what the runtime does with equal
+elements. Descending reverses the keys and not the ties.
+
+**Order and equality come from the engine, not from these functions.**
+`compareValues` is what `<` and `=` are built on, so `SORT` agrees with the
+sheet that `"a"` and `"A"` are the same text and `UNIQUE` agrees with it about
+what a blank cell is. A `localeCompare` or an `includes` here would be a second
+notion of equality living next to the first.
+
+That inheritance has a consequence worth knowing. The sheet's equality is **not
+transitive**: a blank cell takes the type of whatever it is compared with and
+that type's zero, so a blank equals `0` and a blank equals `""` while `0` and
+`""` are not equal to each other — `=(A1=A3)`, `=(A2=A3)` and `=(A1=A2)` report
+TRUE, TRUE and FALSE on exactly that triple. No hash can represent a
+non-transitive equivalence, which is why `UNIQUE` compares each line against
+every line it has already kept instead. The visible effect is that `UNIQUE` over
+a blank, a `0` and an empty string answers with two lines or with one depending
+on which of them arrives first, and that is the comparison rules showing
+through rather than a defect.
+
+**An empty answer is `#CALC!`.** A `FILTER` nothing matches, and a
+`UNIQUE(..., TRUE)` over a list with no singletons, have no lines to return. A
+block with no lines has no cell to anchor it, so there is nowhere on the sheet
+for the result to be, and a blank would be a wrong answer rather than no
+answer — the question was answered with none. `FILTER`'s third argument
+overrides it with something to show. Like `#SPILL!`, `#CALC!` is produced by the
+engine rather than typed, so neither is in the set of error literals a formula
+can write.
+
 ## Linear algebra and regression
 
 Blocks make the functions whose answer is a block reachable, and the ones worth
@@ -1176,9 +1233,9 @@ than a wait.
   one value is `#VALUE!` rather than a silent pick from the calling row.
 - A block cannot be entered over a range the way a legacy array formula was.
   Spilling from a single anchor is the only form.
-- `SORT`, `FILTER` and `UNIQUE` are not implemented; the block-producing
-  functions are `SEQUENCE`, `TRANSPOSE`, `TOROW`, `TOCOL` and the matrix and
-  regression packs.
+- `SORT`, `SORTBY`, `FILTER` and `UNIQUE` work on whole lines and nothing
+  narrower: there is no `SORT` of one column in place within a wider block, and
+  no `FILTER` that keeps part of a row.
 - `LINEST` refuses linearly dependent predictors rather than dropping columns
   to the rank of the design matrix, which is what a rank-revealing
   factorisation would allow.
