@@ -278,6 +278,32 @@ tree green and the public API usable.
       caught by a single test apiece
 - [x] A row on the front page carrying both halves, since the agreement alone
       would be vacuous
+## Phase 25 — Sorting, filtering and deduplicating a table
+
+- [x] `SORT` over a block's own line, either orientation, either direction
+- [x] `SORTBY` over vectors outside the block, with as many keys as given and
+      a later one speaking only where every earlier one ties
+- [x] `FILTER` keeping the lines a parallel vector of conditions selects, and
+      refusing a condition it cannot read rather than dropping the line
+- [x] `UNIQUE` by whole line, with the option of keeping only what appears once
+- [x] All four written once over a list of lines and run on the rows or on the
+      transpose, so the second orientation costs a transpose and not a second
+      implementation
+- [x] Stability as this function's guarantee rather than the host's: the
+      original position is the final tiebreaker, so the comparison never
+      relies on what the runtime does with equal elements
+- [x] Order and equality taken from `compareValues`, the same comparison `<`
+      and `=` are built on, rather than a second notion living beside it
+- [x] The consequence of that inheritance faced rather than papered over: the
+      sheet's equality is not transitive, a blank equalling both `0` and the
+      empty string while those two differ, so the distinct lines are found by
+      comparison and the answer depends on the order they arrive in
+- [x] `#CALC!` for a block with no lines, since there is no cell to anchor one
+      and a blank would be a wrong answer rather than no answer
+- [x] `FILTER`'s third argument overriding it, and `IFERROR` catching it
+- [x] Both new errors kept out of the lexer's literals, the way `#SPILL!` is
+- [x] Reachable from the shell as they stand — `.fns` lists them and `.spill`
+      reports the block — so no new command was needed
 
 ## Phase 26 — The exponential pair
 

@@ -16,6 +16,7 @@ export const ERROR_CODES = [
   "#NUM!",
   "#N/A",
   "#SPILL!",
+  "#CALC!",
   "#CYCLE!",
 ] as const;
 
@@ -73,6 +74,19 @@ export const NA_ERROR = err("#N/A");
  * that it could not land instead.
  */
 export const SPILL_ERROR = err("#SPILL!");
+/**
+ * `#CALC!` — the answer is a block with no cells in it.
+ *
+ * `FILTER` over a condition nothing satisfies has no rows to return, and an
+ * empty block cannot be laid on a sheet: there is no cell to put the anchor
+ * in, so there is nowhere for the result to be. Returning a blank instead
+ * would be a wrong answer rather than no answer — a blank is a value, and the
+ * question "which rows matched" was answered with none.
+ *
+ * Like `#SPILL!` this is produced by the engine and not typed by a user, so it
+ * is deliberately absent from the error literals the lexer accepts.
+ */
+export const CALC_ERROR = err("#CALC!");
 /**
  * `#CYCLE!` — the cell participates in a circular reference.
  *
