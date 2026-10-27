@@ -79,6 +79,10 @@ function print(node: Node): string {
       return formatRange(node.range);
     case "name":
       return node.name;
+    case "omitted":
+      // Nothing goes back where nothing was written, which is what makes the
+      // round trip hold: `IF(A1,,2)` prints as itself and not as `IF(A1,0,2)`.
+      return "";
     case "call":
       return `${node.name}(${node.args.map(print).join(",")})`;
     case "group":
