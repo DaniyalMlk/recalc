@@ -23,6 +23,9 @@
  */
 
 import { Workbook } from "../src/engine/workbook.js";
+import { serialFromCivil } from "../src/date/serial.js";
+import { yearFraction } from "../src/date/daycount.js";
+import { accruedYears } from "../src/functions/bonds.js";
 import { COUPON_REFERENCE } from "./coupon-reference.js";
 
 export interface Check {
@@ -384,6 +387,71 @@ function scheduleMatchesReference(): Check {
   };
 }
 
+/**
+ * The per-period accrual against the single span, where the two must agree.
+ *
+ * `ACCRINT` divides an accrual at every quasi-coupon date it crosses and
+ * weights each piece by the length of the period it falls in. On three of the
+ * five bases that has to come back to `YEARFRAC` over the whole span: their
+ * period length is a constant and their day counts are additive, so the pieces
+ * telescope and only the order of division differs. The reference is another
+ * module rather than this one's own arithmetic, which is what gives the row
+ * its force — and the two bases where the forms genuinely differ are reported
+ * beside it, because an agreement no input could violate is not a check.
+ */
+function accrualTelescopes(): Check {
+  const base = serialFromCivil(2024, 1, 1);
+  let worst = 0;
+  let cases = 0;
+  let divergence = 0;
+  for (let offset = 0; offset < 760; offset += 7) {
+    for (const length of [40, 200, 420, 700]) {
+      for (const ahead of [95, 190, 260, 400, 580]) {
+        for (const frequency of [1, 2, 4] as const) {
+          const issue = base + offset;
+          const settlement = issue + length;
+          const first = issue + ahead;
+          cases += 1;
+          for (const basis of [2, 3, 4] as const) {
+            worst = Math.max(
+              worst,
+              Math.abs(
+                accruedYears(issue, settlement, first, frequency, basis) -
+                  yearFraction(issue, settlement, basis),
+              ),
+            );
+          }
+          for (const basis of [0, 1] as const) {
+            const span = yearFraction(issue, settlement, basis);
+            divergence = Math.max(
+              divergence,
+              Math.abs(
+                accruedYears(issue, settlement, first, frequency, basis) - span,
+              ) / span,
+            );
+          }
+        }
+      }
+    }
+  }
+  const ok = worst < 1e-15 && divergence > 0.02;
+  return {
+    label:
+      "The accrual `ACCRINT` sums over quasi-coupon periods against `YEARFRAC` " +
+      "over the same span, on the three bases where the two must agree",
+    result:
+      `below 1e-15 over ${cases.toLocaleString("en-GB")} cases — and past 2% ` +
+      `on the two bases where they must not, which is why the agreement is a check`,
+    ok,
+    ...(ok
+      ? {}
+      : {
+          complaint:
+            `residue ${worst} against 1e-15; divergence ${divergence} against 0.02`,
+        }),
+  };
+}
+
 /** Every row of the evidence table, in the order the README prints them. */
 export function measure(): readonly Check[] {
   return [
@@ -395,6 +463,7 @@ export function measure(): readonly Check[] {
     amortisationCloses(),
     inverseRoundTrip(),
     scheduleMatchesReference(),
+    accrualTelescopes(),
   ];
 }
 
