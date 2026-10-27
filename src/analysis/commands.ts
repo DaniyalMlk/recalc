@@ -534,9 +534,17 @@ function renderSummary(summary: Summary, ink: Ink): string {
 
   // Adjusted R-squared beside the raw one, because the raw one can only go up
   // as columns are added and on its own says nothing about whether they helped.
+  // The rank is printed only when a column was dropped as dependent, which is
+  // the one case where the degrees of freedom cannot be worked out from the
+  // predictor count. A line on every fit would be one more thing to interpret;
+  // a line here says a column did not count.
+  const columns = summary.predictors + (summary.withIntercept ? 1 : 0);
   const stats = grid([
     ["observations", String(summary.observations)],
     ["predictors", String(summary.predictors)],
+    ...(summary.rank < columns
+      ? [["columns that counted", String(summary.rank)] as [string, string]]
+      : []),
     ["degrees of freedom", String(summary.df)],
     ["r squared", short(summary.rSquared)],
     ["adjusted r squared", short(summary.adjustedRSquared)],

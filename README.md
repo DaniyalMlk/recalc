@@ -595,6 +595,31 @@ Every regression function runs through one fit. `SLOPE`, `LINEST`, `TREND`,
 re-derivations, which is why the tests can check them against each other and
 expect exact agreement rather than approximate.
 
+**A dependent column is dropped, not refused.** Someone who includes a total
+and both its parts, or the same series in two units, has handed over a design
+matrix whose columns are not independent. That leaves the *coefficients*
+undetermined — infinitely many vectors give the same fit — but it does not
+touch the *fitted values*, which are the projection of `y` onto the column
+space and are the same however the space is spanned. So the fit is reported
+over a basis: the columns outside it carry the zero they contribute, their
+standard error is `#N/A` rather than a zero that would read as measured and
+exactly nothing, and adding such a column changes the residual sum of squares
+and the R-squared by exactly zero.
+
+Which column goes is the order they were written in — the earlier of a
+dependent pair survives. That is a choice and not an arithmetic fact: in a
+total and its two parts, each column is a combination of the other two, and
+making the order decide puts the choice with the person who wrote it.
+
+**The degrees of freedom then have to come from the rank**, and this is the
+part that is easy to get wrong quietly. A dropped column costs no degree of
+freedom, and that number divides into every standard error, every t, the F
+statistic and its significance. Taking it from the columns handed in instead
+multiplies every reported error by the square root of the ratio of the two
+counts — 11.8% on an eight-observation fit that loses one of four columns, in
+the direction that looks conservative. The coefficients would be perfectly
+right and everything beside them wrong.
+
 **`LOGEST` and `GROWTH` are the same fit with a transform either side.**
 `y = b · m₁^x₁ · m₂^x₂ · …` becomes a plain multiple regression once both sides
 are logged, so these are the linear pair with the log taken on the way in and
@@ -1302,9 +1327,11 @@ than a wait.
 - `SORT`, `SORTBY`, `FILTER` and `UNIQUE` work on whole lines and nothing
   narrower: there is no `SORT` of one column in place within a wider block, and
   no `FILTER` that keeps part of a row.
-- `LINEST` refuses linearly dependent predictors rather than dropping columns
-  to the rank of the design matrix, which is what a rank-revealing
-  factorisation would allow.
+- A dropped column is reported as a zero coefficient, which is what it
+  contributes, but nothing says *which* column went other than the zero
+  itself: there is no list of the columns a fit discarded, and `LINEST` has
+  nowhere in its five-row block to put one. The shell's `.regress` prints the
+  rank, which is as close as the surface gets.
 - `LOGEST` and `GROWTH` are the only non-linear fits. A power curve
   (`y = b · x^m`, which is a log on both sides rather than one) has no
   function of its own.

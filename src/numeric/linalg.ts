@@ -246,6 +246,20 @@ export interface QR {
   readonly qty: number[] | null;
   /** True when a column turned out to be dependent on the ones before it. */
   readonly rankDeficient: boolean;
+  /**
+   * The columns that form a basis, in order, naming *which* ones rather than
+   * only that some column did not.
+   *
+   * A column is kept when what is left of it after the columns already kept
+   * have been swept out is larger than the tolerance, and dropped when it is
+   * not. So the columns are considered left to right and the earlier of a
+   * dependent pair is the one that survives — a rule worth stating, because
+   * "the column that is dependent" is not a property of a column. In
+   * `[total, part, part]` every column is a combination of the other two, and
+   * which of the three is redundant is a choice; taking them in order makes
+   * the choice the caller's, since they wrote the order.
+   */
+  readonly kept: number[];
 }
 
 /**
@@ -262,57 +276,59 @@ export function qrFactor(a: Rows, y: readonly number[]): QR {
   const tolerance = singularityTolerance(a);
   const work: MutableRows = a.map((row) => [...row]);
   const rhs = [...y];
-  let rankDeficient = false;
+  const kept: number[] = [];
 
+  // `row` advances only when a column is kept, so the triangle is built over
+  // the basis rather than over the columns. A dropped column leaves no row and
+  // no diagonal entry, which is what lets the factorisation be used rather
+  // than only inspected.
+  let row = 0;
   for (let k = 0; k < n; k++) {
-    // The Householder vector that zeroes column k below the diagonal.
+    // The Householder vector that zeroes column k below the diagonal. What is
+    // left in the column at this point is the part of it the kept columns do
+    // not already explain, so its norm is the test for dependence.
     let norm = 0;
-    for (let i = k; i < m; i++) norm += work[i]![k]! * work[i]![k]!;
+    for (let i = row; i < m; i++) norm += work[i]![k]! * work[i]![k]!;
     norm = Math.sqrt(norm);
-    if (norm <= tolerance) {
-      rankDeficient = true;
-      continue;
-    }
+    if (norm <= tolerance) continue;
 
     // Reflect away from the current entry rather than towards it: choosing the
     // same sign as the pivot avoids subtracting two nearly equal numbers, which
     // is the one place this algorithm can lose its accuracy.
-    const alpha = work[k]![k]! >= 0 ? -norm : norm;
+    const alpha = work[row]![k]! >= 0 ? -norm : norm;
     const v = new Array<number>(m).fill(0);
-    for (let i = k; i < m; i++) v[i] = work[i]![k]!;
-    v[k] = v[k]! - alpha;
+    for (let i = row; i < m; i++) v[i] = work[i]![k]!;
+    v[row] = v[row]! - alpha;
 
     let vnorm = 0;
-    for (let i = k; i < m; i++) vnorm += v[i]! * v[i]!;
-    if (vnorm === 0) {
-      rankDeficient = true;
-      continue;
-    }
+    for (let i = row; i < m; i++) vnorm += v[i]! * v[i]!;
+    if (vnorm === 0) continue;
 
     for (let j = k; j < n; j++) {
       let dot = 0;
-      for (let i = k; i < m; i++) dot += v[i]! * work[i]![j]!;
+      for (let i = row; i < m; i++) dot += v[i]! * work[i]![j]!;
       const scale = (2 * dot) / vnorm;
-      for (let i = k; i < m; i++) work[i]![j] = work[i]![j]! - scale * v[i]!;
+      for (let i = row; i < m; i++) work[i]![j] = work[i]![j]! - scale * v[i]!;
     }
 
     let dotY = 0;
-    for (let i = k; i < m; i++) dotY += v[i]! * rhs[i]!;
+    for (let i = row; i < m; i++) dotY += v[i]! * rhs[i]!;
     const scaleY = (2 * dotY) / vnorm;
-    for (let i = k; i < m; i++) rhs[i] = rhs[i]! - scaleY * v[i]!;
+    for (let i = row; i < m; i++) rhs[i] = rhs[i]! - scaleY * v[i]!;
+
+    kept.push(k);
+    row += 1;
   }
 
+  const rank = kept.length;
   const r: MutableRows = [];
-  for (let i = 0; i < n; i++) {
-    const row = new Array<number>(n).fill(0);
-    for (let j = i; j < n; j++) row[j] = work[i]![j]!;
-    r.push(row);
-  }
-  for (let i = 0; i < n; i++) {
-    if (Math.abs(r[i]![i]!) <= tolerance) rankDeficient = true;
+  for (let i = 0; i < rank; i++) {
+    const line = new Array<number>(rank).fill(0);
+    for (let j = i; j < rank; j++) line[j] = work[i]![kept[j]!]!;
+    r.push(line);
   }
 
-  return { r, qty: rhs.slice(0, n), rankDeficient };
+  return { r, qty: rhs.slice(0, rank), rankDeficient: rank < n, kept };
 }
 
 /** Solve `R x = b` for upper-triangular `R`, or `null` if a pivot is zero. */
@@ -347,7 +363,12 @@ export function invertUpper(r: Rows): MutableRows | null {
 }
 
 export interface Fit {
-  /** One coefficient per column of the design matrix, in column order. */
+  /**
+   * One coefficient per column of the design matrix, in column order.
+   *
+   * A column that was dropped as dependent carries **zero**, which is what it
+   * contributes: the fitted values are those of the design without it.
+   */
   readonly coefficients: number[];
   /** `y` minus the fitted values. */
   readonly residuals: number[];
@@ -357,21 +378,46 @@ export interface Fit {
    * Diagonal of `(X^T X)^-1`, which is what turns the residual variance into a
    * standard error per coefficient. Read off `R^-1` rather than by forming and
    * inverting `X^T X`, for the same reason the fit itself uses QR.
+   *
+   * `NaN` for a dropped column, which has no standard error rather than one of
+   * zero — zero would read as "measured, and exactly nothing".
    */
   readonly variance: number[];
+  /** Columns that formed the basis; `coefficients.length` minus this were dropped. */
+  readonly rank: number;
 }
 
-/** Least-squares fit of `design x = y`, or `null` when the columns are dependent. */
+/**
+ * Least-squares fit of `design x = y`, dropping columns to the rank.
+ *
+ * A dependent column leaves the *coefficients* undetermined — there are
+ * infinitely many vectors giving the same fit — but it does not touch the
+ * *fitted values*, which are the projection of `y` onto the column space and
+ * are unique however the space is spanned. So the fit is reported over a basis
+ * and the columns outside it get a zero, rather than the whole fit being
+ * refused because one column repeated another.
+ *
+ * `rank` is the number that matters downstream: every standard error, every F
+ * statistic and every significance divides by degrees of freedom counted from
+ * it, not from the number of columns handed in.
+ *
+ * `null` only for a design with no rows or no columns, or a `y` of the wrong
+ * length — shapes that are not a problem rather than a problem with an answer.
+ */
 export function leastSquares(design: Rows, y: readonly number[]): Fit | null {
   const m = rowCount(design);
   const n = colCount(design);
   if (m === 0 || n === 0 || y.length !== m) return null;
 
-  const { r, qty, rankDeficient } = qrFactor(design, y);
-  if (rankDeficient || qty === null) return null;
+  const { r, qty, kept } = qrFactor(design, y);
+  if (qty === null || kept.length === 0) return null;
 
-  const coefficients = backSubstitute(r, qty);
-  if (coefficients === null) return null;
+  const solved = backSubstitute(r, qty);
+  if (solved === null) return null;
+  const coefficients = new Array<number>(n).fill(0);
+  for (const [index, column] of kept.entries()) {
+    coefficients[column] = solved[index]!;
+  }
 
   const residuals = new Array<number>(m).fill(0);
   let ssResidual = 0;
@@ -385,12 +431,14 @@ export function leastSquares(design: Rows, y: readonly number[]): Fit | null {
 
   const rInv = invertUpper(r);
   if (rInv === null) return null;
-  const variance = new Array<number>(n).fill(0);
-  for (let j = 0; j < n; j++) {
+  const variance = new Array<number>(n).fill(Number.NaN);
+  for (const [index, column] of kept.entries()) {
     let sum = 0;
-    for (let i = j; i < n; i++) sum += rInv[j]![i]! * rInv[j]![i]!;
-    variance[j] = sum;
+    for (let i = index; i < kept.length; i++) {
+      sum += rInv[index]![i]! * rInv[index]![i]!;
+    }
+    variance[column] = sum;
   }
 
-  return { coefficients, residuals, ssResidual, variance };
+  return { coefficients, residuals, ssResidual, variance, rank: kept.length };
 }

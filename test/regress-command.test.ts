@@ -249,13 +249,46 @@ describe("what the command prints", () => {
     expect(run(book, "E1:E11 by A1:D11")).toContain("numbers");
   });
 
-  it("refuses linearly dependent predictors", () => {
+  it("reports a dropped predictor as a zero with no standard error", () => {
     const book = new Workbook();
     book.setCells({
       A1: 1, A2: 4, A3: 2, A4: 7, A5: 3,
       B1: 1, B2: 2, B3: 3, B4: 4, B5: 5,
       C1: 2, C2: 4, C3: 6, C4: 8, C5: 10,
     });
-    expect(run(book, "A1:A5 by B1:C5")).toContain("dependent");
+    const out = run(book, "A1:A5 by B1:C5");
+    expect(out).not.toContain("dependent");
+    // The dropped term is still listed, with the zero it contributes and
+    // nothing where a standard error, a t and a p would be.
+    expect(out).toMatch(/\n\s+C\s+0\s+n\/a\s+n\/a\s+n\/a/);
+    expect(out).toContain("columns that counted");
+
+    const summary = summarise(
+      book,
+      parseA1Range("A1:A5"),
+      parseA1Range("B1:C5"),
+      true,
+    );
+    expect(summary.predictors).toBe(2);
+    expect(summary.rank).toBe(2);
+    // 5 observations less the 2 columns that formed a basis, not less the 3
+    // handed in — which is the number every standard error divides by.
+    expect(summary.df).toBe(3);
+    expect(Number.isNaN(summary.terms[2]?.standardError as number)).toBe(true);
+  });
+
+  it("says nothing about rank when every column counted", () => {
+    const book = new Workbook();
+    book.setCells({
+      A1: 1, A2: 4, A3: 2, A4: 7, A5: 3,
+      B1: 1, B2: 2, B3: 3, B4: 4, B5: 5,
+      C1: 2, C2: 5, C3: 6, C4: 1, C5: 9,
+    });
+    // A line on every fit would be one more thing to interpret; it appears
+    // only where the degrees of freedom cannot be read off the predictors.
+    expect(run(book, "A1:A5 by B1:C5")).not.toContain("columns that counted");
+    expect(run(book, "A1:A5 by B1:C5 through zero")).not.toContain(
+      "columns that counted",
+    );
   });
 });

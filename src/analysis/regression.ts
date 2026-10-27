@@ -71,6 +71,16 @@ export interface Summary {
    * as a whole is worth anything, which is the question to ask first.
    */
   readonly significanceF: number;
+  /**
+   * Columns of the design that formed a basis, intercept included.
+   *
+   * Equal to `predictors` plus an intercept unless a column was dependent and
+   * dropped, which is the one case where the degrees of freedom below cannot
+   * be worked out from the predictor count.
+   */
+  readonly rank: number;
+  /** Whether an intercept was fitted, which the rank has to be read against. */
+  readonly withIntercept: boolean;
 }
 
 function valuesOf(book: Workbook, range: RangeRef): number[][] {
@@ -137,11 +147,15 @@ export function summarise(
   const design = x.map((row) => (withIntercept ? [1, ...row] : [...row]));
   const fit = leastSquares(design, y);
   if (fit === null) {
-    throw new RegressionError("the predictors are linearly dependent");
+    throw new RegressionError("the design matrix has no rows or no columns");
   }
 
   const n = y.length;
-  const df = n - parameters;
+  // From the rank rather than from the parameter count: a dependent column was
+  // dropped and costs no degree of freedom, and this number divides into every
+  // standard error, every t, the F and its significance.
+  const slopes = fit.rank - (withIntercept ? 1 : 0);
+  const df = n - fit.rank;
   const ssResidual = fit.ssResidual;
   let ssTotal = 0;
   if (withIntercept) {
@@ -187,9 +201,9 @@ export function summarise(
     : 1 - ((1 - rSquared) * n) / df;
 
   const f =
-    ssResidual === 0
+    ssResidual === 0 || slopes === 0
       ? Number.POSITIVE_INFINITY
-      : ssRegression / k / (ssResidual / df);
+      : ssRegression / slopes / (ssResidual / df);
 
   return {
     terms,
@@ -202,7 +216,9 @@ export function summarise(
     f,
     ssRegression,
     ssResidual,
-    significanceF: Number.isFinite(f) ? fSignificance(f, k, df) : 0,
+    significanceF: Number.isFinite(f) ? fSignificance(f, slopes, df) : 0,
+    rank: fit.rank,
+    withIntercept,
   };
 }
 

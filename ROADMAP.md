@@ -334,3 +334,39 @@ tree green and the public API usable.
 - [x] Five ways of getting the transform wrong confirmed to fail, including
       exponentiating the standard errors with the coefficients — caught by one
       test, which is the one that says which space they live in
+
+## Phase 27 — A fit to the rank, rather than a refusal
+
+- [x] The factorisation reporting which columns form a basis rather than one
+      flag saying that some column did not, with the triangle built over that
+      basis so a dropped column leaves no zero pivot
+- [x] Which column goes settled by the order it was written in, since "the
+      dependent column" is not a property of a column: in a total and its two
+      parts each is a combination of the other two
+- [x] A fit over the basis, the columns outside it carrying the zero they
+      contribute and `#N/A` where a standard error would be
+- [x] The identity that says dropping was right: adding a dependent column
+      leaves the residuals and the residual sum of squares bit for bit
+      unchanged, because a projection does not depend on how its space is
+      spanned
+- [x] Degrees of freedom from the rank, through `LINEST`, the single-variable
+      statistics and the shell summary alike
+- [x] The size of getting that wrong: errors taken against the column count
+      are too large by the square root of the ratio of the counts, 11.8% on an
+      eight-observation fit losing one of four columns, in the direction that
+      looks conservative
+- [x] The F's numerator taking the slopes actually fitted, for the same reason
+- [x] The tolerance measured rather than asserted: the crossover sits at about
+      2.7e-13 in a matrix of units and about 2.7e-7 in the same matrix scaled
+      by a million, so six orders of magnitude move it by six to within about
+      a tenth of a per cent — bounded from both sides
+- [x] A scalar multiple called dependent at any scale, a column of zeros
+      dropped, a column repeated three times leaving one
+- [x] The refusal that remains: too few observations is not something a basis
+      can rescue
+- [x] `.regress` printing the rank only where a column was dropped, which is
+      the one case where the degrees of freedom cannot be read off the
+      predictor count
+- [x] Six ways of getting it wrong confirmed to fail, two caught by a single
+      test apiece; a seventh attempt was a no-op and had to be rewritten
+      before it tested anything

@@ -408,14 +408,19 @@ describe("what the regression refuses", () => {
     expect(book.getDisplay("E1")).toBe("#DIV/0!");
   });
 
-  it("refuses linearly dependent predictors", () => {
+  it("drops a linearly dependent predictor and reports it as a zero", () => {
     const book = sheet({
       A1: 1, A2: 4, A3: 2, A4: 7,
       B1: 1, B2: 2, B3: 3, B4: 4,
       C1: 2, C2: 4, C3: 6, C4: 8,
     });
     book.setCell("E1", "=LINEST(A1:A4,B1:C4)");
-    expect(book.getDisplay("E1")).toBe("#NUM!");
+    // Reported last slope first: C is twice B, so C is the one dropped and
+    // its coefficient is the zero it contributes.
+    expect(book.getDisplay("E1")).not.toBe("#NUM!");
+    expect(book.getValue("E1")).toBe(0);
+    expect(typeof book.getValue("F1")).toBe("number");
+    expect(typeof book.getValue("G1")).toBe("number");
   });
 
   it("refuses a SLOPE over several predictors", () => {
