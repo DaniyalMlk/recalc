@@ -337,6 +337,14 @@ formatWith("h:mm AM/PM", 46081.5729).text;       // "1:44 PM"
 formatWith("[h]:mm", 1.5).text;                  // "36:00" - not "12:00"
 ```
 
+A section that shows a clock rounds the serial once, to the nearest second,
+and reads its calendar fields off the same rounded value. That matters only in
+the last half second of a day, and it matters a lot there: with the clock
+rounding and the date flooring, `2026-03-04 23:59:59.6` renders its clock as
+the next day's midnight beside the current day's date, which is a timestamp
+twenty-four hours from the instant in the cell. A section with no clock field
+truncates instead, because an instant late on the 4th is on the 4th.
+
 `y` `m` `d` `h` `s` widen with repetition: `m` is a bare month, `mm` pads it,
 `mmm` and `mmmm` name it, `mmmmm` gives its initial; `ddd` and `dddd` name the
 weekday. `m` is the one ambiguous code — it means minute next to an hour or a
