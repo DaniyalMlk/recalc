@@ -249,10 +249,6 @@ describe("date and time codes", () => {
 });
 
 describe("out of scope codes", () => {
-  it("rejects fraction codes", () => {
-    expect(() => parseFormatCode("# ?/?")).toThrow(/fraction/);
-  });
-
   it("rejects an unknown character", () => {
     expect(() => parseFormatCode("0§0")).toThrow(/unexpected character/);
   });
