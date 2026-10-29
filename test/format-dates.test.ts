@@ -117,9 +117,13 @@ describe("what a date code will not do", () => {
 
 describe("rounding inside a date code", () => {
   it("never lets the fields disagree with each other", () => {
-    // A serial a hair under midnight must not print as 24:00 or roll the date.
+    // A serial a hair under midnight must not print as 24:00 -- and the date
+    // it prints has to be the one the clock rolled into. This assertion used
+    // to require the opposite of its own name, pinning "2026-03-04 00:00:00":
+    // a timestamp whose clock is on the 5th and whose date is on the 4th.
     const almost = serialFromCivil(2026, 3, 4) + 1 - 1e-9;
-    expect(show("yyyy-mm-dd hh:mm:ss", almost)).toBe("2026-03-04 00:00:00");
+    expect(show("yyyy-mm-dd hh:mm:ss", almost)).toBe("2026-03-05 00:00:00");
+    expect(show("hh:mm:ss", almost)).toBe("00:00:00");
   });
 
   it("rounds a time arrived at by arithmetic to the second it means", () => {

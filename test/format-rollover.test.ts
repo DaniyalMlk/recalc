@@ -120,4 +120,27 @@ describe("the last half-second of a day", () => {
     expect(show("[h]:mm:ss", 1 + 86399.6 / 86400)).toBe("48:00:00");
     expect(show("[h]:mm:ss", 1 + 86399.4 / 86400)).toBe("47:59:59");
   });
+
+  it("counts a duration code as a clock, so a date beside one still carries", () => {
+    // `[h]` is an hour. A section pairing one with a calendar field has the
+    // same disagreement available to it as `hh` does, and this is the only
+    // assertion that distinguishes a duration code being in the list from
+    // being left out of it.
+    // A duration code on its own, with no `mm` beside it: `[h]:mm` would be
+    // carried by its minute field and would not tell the two spellings apart.
+    const serial = at(2026, 3, 4, JUST_BEFORE_MIDNIGHT);
+    expect(show("yyyy-mm-dd [h]", serial)).toBe("2026-03-05 1106064");
+    expect(show("yyyy-mm-dd [m]", serial)).toBe("2026-03-05 66363840");
+    expect(show("yyyy-mm-dd", serial)).toBe("2026-03-04");
+  });
+
+  it("counts a meridiem marker as a clock", () => {
+    // `AM/PM` on its own beside a date carries no hour of its own, but it is
+    // still a clock field: the day it is printed against is the day the
+    // rounded clock lands in. Same reasoning, and likewise the only assertion
+    // that tells the two spellings apart.
+    const serial = at(2026, 3, 4, JUST_BEFORE_MIDNIGHT);
+    expect(show("yyyy-mm-dd AM/PM", serial)).toBe("2026-03-05 AM");
+    expect(show("d mmm AM/PM", serial)).toBe("5 Mar AM");
+  });
 });
