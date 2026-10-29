@@ -221,9 +221,9 @@ describe("the TEXT function", () => {
   });
 
   it("returns #VALUE! for a code it cannot compile", () => {
-    const value = evaluate('=TEXT(1,"# ?/?")');
+    const value = evaluate('=TEXT(1,"0.0.0")');
     expect(isFormulaError(value) && value.code).toBe("#VALUE!");
-    expect(isFormulaError(value) && value.detail).toMatch(/fraction/);
+    expect(isFormulaError(value) && value.detail).toMatch(/decimal point/);
   });
 
   it("formats a serial through a date code", () => {

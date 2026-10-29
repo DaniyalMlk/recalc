@@ -280,8 +280,49 @@ produces and what a cell displays cannot drift apart:
 Supported: digit placeholders `0` `#` `?`, a decimal point, grouping and
 thousands-scaling commas, `%`, quoted literals, `\` escapes, `_` width skips,
 `*` fills, `@` for text, `[Red]`-style colours, `E+00` scientific codes, and the
-date and time codes below. Fraction codes (`# ?/?`) are rejected with the offset
-of the offending character rather than silently mis-formatted.
+fraction, date and time codes below.
+
+### Fraction codes
+
+A fraction code lays out a whole part, a numerator and a denominator instead of
+digits around a point, and the number it needs is a rational approximation
+rather than a rounded decimal:
+
+```ts
+formatWith("# ?/?", 1.75).text;        // "1 3/4"
+formatWith("# ??/??", 3.14159).text;   // "3 14/99"
+formatWith("# ???/???", 3.14159).text; // "3  16/113"
+formatWith("?/?", 1.75).text;          // "7/4"  - improper
+formatWith("# ?/8", 1.3).text;         // "1 2/8"
+```
+
+Written as digit positions, the denominator is *bounded*: `# ??/??` asks for
+the closest fraction whose denominator has at most two digits. That is a
+different question from truncating the decimal expansion, and it has a
+different answer — 0.3 under `# ?/?` is `2/7`, because `3/10` does not fit in
+one digit and `1/3` is more than twice as far away. The search is a
+continued-fraction expansion with the semiconvergents considered, which is what
+makes it the closest fraction and not merely a close one; the exhaustive scan
+that answers the same question is in the tests, as the reference.
+
+Written as a literal, the denominator is *fixed*: `# ?/8` names eighths, so a
+third renders as `3/8` and is left unreduced, because a format asking for
+eighths is answered in eighths. The overlap is `0`, and it goes with the rest
+of its run — the zero of `/10` is part of ten, the zero of `/00` is a place to
+put a digit.
+
+Three details make a column of them readable. The numerator pads on its left
+and the denominator on its right, so the bar sits in the same place on every
+row — that is the whole reason `?` exists alongside `0` and `#`. A fraction
+that rounds up to a whole carries, so 0.99 in eighths is `1` and not `8/8`;
+an improper code has no whole part to carry into, which is the point of it.
+And a numerator that rounds away takes the fraction with it but leaves the
+width behind, so a row holding a whole number still lines up with its
+neighbours.
+
+Whether a `/` starts a fraction depends on what surrounds it: digit positions
+on the left and a denominator on the right. A lone one is a separator, which is
+what keeps `d/m/yyyy` a date.
 
 ### Date and time codes
 
@@ -1376,11 +1417,11 @@ than a wait.
 - Only one sheet; there are no cross-sheet references.
 - Scenarios are not serialised: they live for the length of a session, and CSV
   has nowhere to put them.
-- Fraction format codes (`# ?/?`) are rejected rather than supported: the
-  rational approximation they need has nothing to do with the digit machinery
-  the rest of the compiler is built from.
 - Sub-second format codes (`ss.00`) are not supported, and neither is ISO week
   numbering — `WEEKNUM` counts the week holding 1 January as week 1.
+- A fraction code cannot be combined with a decimal point or a scientific
+  exponent in the same section; both are refused with an offset. There is no
+  reading of `0.0 ?/?` that is not already a fraction.
 - A date is recognised by the format on its cell, not by what was typed: an
   entered `2026-03-04` is text until `DATEVALUE` turns it into a serial.
 - A format belongs to a cell, not to a row, a column or the sheet, so
