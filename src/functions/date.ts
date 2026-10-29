@@ -24,6 +24,7 @@ import {
   daysBetween,
   daysInMonth,
   endOfMonth,
+  isoWeekOf,
   isValidSerial,
   serialFromCivil,
   timeFraction,
@@ -302,12 +303,37 @@ defineFunction({
 });
 
 /**
+ * Which weekday a `WEEKNUM` return type starts its weeks on, as a Sunday-zero
+ * index. Type 21 is absent because it does not belong to this scheme at all.
+ *
+ * The two numberings exist for historical reasons rather than good ones: 1
+ * and 2 came first and cover the two common cases, and 11 to 17 were added
+ * later to cover all seven. 2 and 11 are the same thing spelled twice.
+ */
+const WEEKNUM_START_OF_WEEK: Readonly<Record<number, number>> = {
+  1: 0,
+  2: 1,
+  11: 1,
+  12: 2,
+  13: 3,
+  14: 4,
+  15: 5,
+  16: 6,
+  17: 0,
+};
+
+/**
  * `WEEKNUM`, counting the week containing 1 January as week 1.
  *
- * Type 1 starts weeks on Sunday and type 2 on Monday, which between them cover
- * the two conventions in common use for this simple scheme. ISO week numbering
- * is a genuinely different rule — its week 1 is the one holding the first
- * Thursday — and is not what this function computes.
+ * Types 1 and 2 start weeks on Sunday and Monday; 11 through 17 start them on
+ * each day from Monday round to Sunday. All of them share the same simple
+ * rule, under which 1 January is always in week 1 and the first week of a
+ * year can be as short as one day.
+ *
+ * Type 21 is not that rule. It is ISO 8601, where week 1 is the week holding
+ * the first Thursday and the first days of January can belong to the previous
+ * year — so it is computed by {@link isoWeekOf} rather than here, and
+ * `ISOWEEKNUM` is the same answer under its own name.
  */
 defineFunction({
   name: "WEEKNUM",
@@ -323,12 +349,34 @@ defineFunction({
       if (isFormulaError(n)) return n;
       type = Math.trunc(n);
     }
-    if (type !== 1 && type !== 2) return NUM_ERROR;
-    const startOfWeek = type === 1 ? 0 : 1;
+    if (type === 21) return isoWeekOf(serial).week;
+    const startOfWeek = WEEKNUM_START_OF_WEEK[type];
+    if (startOfWeek === undefined) return NUM_ERROR;
     const { year } = civilFromSerial(serial);
     const jan1 = serialFromCivil(year, 1, 1);
     const offset = (weekdayIndex(jan1) - startOfWeek + 7) % 7;
     return Math.floor((daysBetween(jan1, serial) + offset) / 7) + 1;
+  },
+});
+
+/**
+ * `ISOWEEKNUM`, the week number under ISO 8601.
+ *
+ * Weeks start on Monday and week 1 is the one holding the first Thursday of
+ * the year, so 2027-01-01 is in week 53 — of 2026. The year that week belongs
+ * to is not returned, because no spreadsheet returns it; it is available from
+ * the library as `isoWeekOf(serial).weekYear`, and a sheet that reports a
+ * week number across a year boundary needs it.
+ */
+defineFunction({
+  name: "ISOWEEKNUM",
+  description: "ISO 8601 week of the year a date falls in.",
+  minArgs: 1,
+  maxArgs: 1,
+  call(args) {
+    const serial = serialArg(args[0]);
+    if (!isSerial(serial)) return serial;
+    return isoWeekOf(serial).week;
   },
 });
 
