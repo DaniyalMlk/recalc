@@ -452,3 +452,26 @@ tree green and the public API usable.
 - [x] Twenty-four ways of getting it wrong confirmed to fail, including the
       two alignments swapped, a carry applied to an improper code, and a lone
       slash read as a fraction bar
+
+## Phase 31 — The date and the clock agreeing on which day it is
+
+- [x] A section showing a clock rounds the serial once and reads the calendar
+      fields off the same value, so the two halves of a timestamp cannot name
+      days twenty-four hours apart
+- [x] A section with no clock field left truncating, since an instant late on
+      the 4th is on the 4th and rounding would move every afternoon
+- [x] The existing convention preserved exactly: the rounding is still to the
+      second and coarser fields are still truncated from it
+- [x] Duration codes and the meridiem marker counted as clock fields, each
+      with the assertion that distinguishes it from being left out
+- [x] The rollover exercised at a month end, a year end, a leap day and the
+      day before one, with the weekday name that goes with them
+- [x] A property reading the rendered timestamp back and requiring it within
+      half a second of the serial, over 903 instants across three midnights —
+      the defect missed by 86,399 of them
+- [x] A first version of that sweep stepping 1.37s at a time, which walked
+      over the half-second window it was about; the stride is 0.137s
+- [x] An existing assertion corrected rather than deleted: it was named for
+      the fields agreeing and pinned them disagreeing
+- [x] Seven ways of getting it wrong confirmed to fail, after two that were
+      verified to be no-op substitutions were dropped rather than counted

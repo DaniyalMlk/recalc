@@ -588,11 +588,42 @@ function pad(value: number, width: number): string {
  * format showing hours and minutes cannot disagree with itself — rounding each
  * field separately is how 11:59:60 gets printed.
  */
+/**
+ * True when a section lays out any part of a clock.
+ *
+ * The bracketed duration codes count as clock fields: `[h]` is an hour, and a
+ * format mixing `[h]` with a calendar field would have the same disagreement
+ * to avoid.
+ */
+function hasClockField(section: FormatSection): boolean {
+  return section.tokens.some(
+    (token) =>
+      token.kind === "datetime" &&
+      (token.field === "hour" ||
+        token.field === "minute" ||
+        token.field === "second" ||
+        token.field === "meridiem" ||
+        token.field === "elapsedHour" ||
+        token.field === "elapsedMinute" ||
+        token.field === "elapsedSecond"),
+  );
+}
+
 function renderDateTime(section: FormatSection, serial: number): string {
-  const date = civilFromSerial(serial);
-  const clock = clockFromSerial(serial);
+  // The clock is rounded to the nearest second -- `clockFromSerial` explains
+  // why -- and the calendar fields have to be read off the same rounded
+  // value, or they disagree in the last half-second of a day: the clock rolls
+  // into tomorrow while the date stays on today, and the timestamp names an
+  // instant twenty-four hours from the one in the cell.
+  //
+  // Only a section that shows a clock rounds. A date format truncates, since
+  // an instant late on the 4th is on the 4th and rounding it up would move
+  // every afternoon to the following day.
+  const shown = hasClockField(section) ? Math.round(serial * 86400) / 86400 : serial;
+  const date = civilFromSerial(shown);
+  const clock = clockFromSerial(shown);
   const hour12 = clock.hour % 12 === 0 ? 12 : clock.hour % 12;
-  const totalSeconds = Math.round(serial * 86400);
+  const totalSeconds = Math.round(shown * 86400);
 
   let out = "";
   for (const token of section.tokens) {
@@ -605,7 +636,7 @@ function renderDateTime(section: FormatSection, serial: number): string {
         break;
       case "datetime":
         out += renderField(token.field, token.width, {
-          serial,
+          serial: shown,
           date,
           clock,
           hour12,
