@@ -3,7 +3,8 @@ import { formatValue as generalText, kindOf } from "../engine/value.js";
 import type { Value } from "../engine/value.js";
 import { base10Exponent, roundToPlaces } from "./decimal.js";
 import { isGeneralFormat, parseFormatCode } from "./code.js";
-import type { FormatCode, FormatColour, FormatSection } from "./code.js";
+import type { FormatCode, FormatColour, FormatSection, FormatToken } from "./code.js";
+import { bestRationalUnder, nearestMultiple } from "./rational.js";
 import {
   civilFromSerial,
   clockFromSerial,
@@ -158,6 +159,15 @@ function renderNumber(
 
   const abs = Math.abs(scaled);
 
+  if (section.fraction !== null) {
+    const body = renderFraction(section, section.fraction, abs);
+    // Same rule as a decimal that rounds away to nothing: a value whose whole
+    // part and whose fraction both come out as zero is shown without a sign,
+    // because the minus would be claiming a precision the format declined.
+    const vanished = !/[1-9]/.test(body);
+    return signed && !vanished ? "-" + body : body;
+  }
+
   const digits =
     section.exponentDigits > 0
       ? scientificDigits(section, abs)
@@ -169,6 +179,189 @@ function renderNumber(
   const vanished = !/[1-9]/.test(digits.int + digits.frac);
   const body = splice(section, digits.int, digits.frac, digits.exponent);
   return signed && !vanished ? "-" + body : body;
+}
+
+/**
+ * Lay a value out as a whole number and a fraction.
+ *
+ * Three decisions here are worth naming, because each one is a place where
+ * the obvious thing is wrong:
+ *
+ * **Carrying.** An approximation can round up to a whole: 0.99 in eighths is
+ * 8/8, and 2.99 under `# ?/?` is two and nine ninths. Both are a whole number
+ * wearing a fraction, so the whole part takes the carry and the numerator
+ * drops to zero. An improper code has no whole part to carry into, which is
+ * the point of it, so 2.99 under `?/?` stays as 27/9.
+ *
+ * **A numerator of zero.** `# ?/?` on 2 is "2" and not "2 0/1". The fraction
+ * is dropped, but the space it reserved is kept, so a column of them still
+ * lines up on the bar — that is what the `?` padding is for. A numerator
+ * written `0` rather than `?` or `#` asked for the zero and keeps it.
+ *
+ * **A whole part of zero.** `#` drops a leading zero, so 0.75 under `# ?/?`
+ * is " 3/4" with nothing before the space. But a value of exactly zero would
+ * then render as nothing at all, which is not a reading of the cell — so when
+ * the fraction is dropped too, the zero comes back.
+ */
+function renderFraction(
+  section: FormatSection,
+  spec: FormatSection["fraction"] & object,
+  abs: number,
+): string {
+  const improper = spec.wholeDigits === 0;
+  let whole = improper ? 0 : Math.floor(abs);
+  const part = improper ? abs : abs - whole;
+
+  let { numerator, denominator } =
+    spec.fixedDenominator === null
+      ? bestRationalUnder(part, spec.maxDenominator)
+      : nearestMultiple(part, spec.fixedDenominator);
+
+  if (!improper && numerator >= denominator) {
+    const carry = Math.floor(numerator / denominator);
+    whole += carry;
+    numerator -= carry * denominator;
+  }
+
+  const digitPads = section.tokens
+    .filter((token): token is Extract<FormatToken, { kind: "digit" }> =>
+      token.kind === "digit",
+    )
+    .map((token) => token.pad);
+  const numeratorPads = digitPads.slice(
+    spec.wholeDigits,
+    spec.wholeDigits + spec.numeratorDigits,
+  );
+  const denominatorPads = digitPads.slice(spec.wholeDigits + spec.numeratorDigits);
+
+  const hidden =
+    !improper && numerator === 0 && !numeratorPads.includes("zero");
+  // Width is only worth preserving if the code asked for it. `?` reserves a
+  // space; `#` says drop it, and blanking it to spaces would be ignoring that.
+  const blankChar =
+    numeratorPads.includes("space") || denominatorPads.includes("space") ? " " : "";
+
+  const wholePieces = layoutInteger(section, String(whole));
+  const forceZero =
+    hidden && whole === 0 && wholePieces.length > 0 && wholePieces.join("") === "";
+  if (forceZero) wholePieces[wholePieces.length - 1] = "0";
+
+  // The numerator pads on its left and the denominator on its right, which
+  // puts the bar in the same column on every row of a sheet. That is the
+  // entire reason `?` exists as a third padding character, so getting it
+  // backwards on one side would cost the format its only purpose.
+  const numeratorPieces = alignRight(String(numerator), numeratorPads);
+  const denominatorPieces = alignLeft(String(denominator), denominatorPads);
+
+  let seen = 0;
+  let slashSeen = false;
+  let fixedDenominatorWritten = false;
+  let out = "";
+  for (const token of section.tokens) {
+    switch (token.kind) {
+      case "digit": {
+        const ordinal = seen;
+        seen += 1;
+        if (ordinal < spec.wholeDigits) {
+          out += wholePieces[ordinal] ?? "";
+        } else if (ordinal < spec.wholeDigits + spec.numeratorDigits) {
+          const at = ordinal - spec.wholeDigits;
+          out += hidden ? blankChar : (numeratorPieces[at] ?? "");
+        } else {
+          const at = ordinal - spec.wholeDigits - spec.numeratorDigits;
+          out += hidden ? blankChar : (denominatorPieces[at] ?? "");
+        }
+        break;
+      }
+      case "literal": {
+        const isBar =
+          !slashSeen &&
+          token.text === "/" &&
+          seen === spec.wholeDigits + spec.numeratorDigits;
+        if (isBar) {
+          slashSeen = true;
+          out += hidden ? blankChar : "/";
+          break;
+        }
+        // The literal immediately after the bar is a fixed denominator, and
+        // goes with the fraction it belongs to rather than standing as text.
+        const isFixedDenominator =
+          slashSeen && spec.fixedDenominator !== null && !fixedDenominatorWritten;
+        if (isFixedDenominator) {
+          fixedDenominatorWritten = true;
+          out += hidden ? blankChar.repeat(token.text.length) : token.text;
+          break;
+        }
+        out += token.text;
+        break;
+      }
+      case "skip":
+        out += " ";
+        break;
+      case "group":
+      case "fill":
+      case "point":
+      case "exponent":
+      case "text":
+        break;
+    }
+  }
+  return out;
+}
+
+/**
+ * Fill digit positions from the right, piling any excess into the leftmost.
+ *
+ * The same rule the integer part uses: a numerator too wide for its positions
+ * is shown in full rather than truncated, because a wrong number is worse
+ * than a wide column.
+ */
+function alignRight(digits: string, pads: readonly ("zero" | "none" | "space")[]): string[] {
+  const pieces: string[] = new Array(pads.length).fill("");
+  let source = digits.length - 1;
+  for (let position = pads.length - 1; position >= 0; position -= 1) {
+    if (position === 0) {
+      let chunk = "";
+      while (source >= 0) {
+        chunk = digits[source]! + chunk;
+        source -= 1;
+      }
+      pieces[0] = chunk === "" ? padCharacter(pads[0]) : chunk;
+      break;
+    }
+    if (source >= 0) {
+      pieces[position] = digits[source]!;
+      source -= 1;
+    } else {
+      pieces[position] = padCharacter(pads[position]);
+    }
+  }
+  return pieces;
+}
+
+/**
+ * Fill digit positions from the left, piling any excess into the rightmost.
+ *
+ * The mirror of `alignRight`, and the denominator's half of keeping the bar
+ * in one column.
+ */
+function alignLeft(digits: string, pads: readonly ("zero" | "none" | "space")[]): string[] {
+  const pieces: string[] = new Array(pads.length).fill("");
+  let source = 0;
+  for (let position = 0; position < pads.length; position += 1) {
+    if (position === pads.length - 1) {
+      pieces[position] =
+        source < digits.length ? digits.slice(source) : padCharacter(pads[position]);
+      break;
+    }
+    if (source < digits.length) {
+      pieces[position] = digits[source]!;
+      source += 1;
+    } else {
+      pieces[position] = padCharacter(pads[position]);
+    }
+  }
+  return pieces;
 }
 
 interface Digits {
