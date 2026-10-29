@@ -154,6 +154,15 @@ export interface FormatSection {
   readonly clock12: boolean;
   /** How to lay out a fraction, when the section is one. */
   readonly fraction: FractionSpec | null;
+  /**
+   * Digit places written behind the seconds field, as in `ss.00`.
+   *
+   * Zero means a whole second, which is both the default and what every
+   * section that is not a clock reports. It sits on the section rather than
+   * on the seconds token because it decides the precision the *whole*
+   * timestamp is rounded at, not only how one field prints.
+   */
+  readonly subSecondDigits: number;
 }
 
 /**
@@ -297,6 +306,7 @@ function parseSection(
   let sawDateField = false;
   let firstDateFieldAt = -1;
   let clock12 = false;
+  let subSecondDigits = 0;
   let fractionBarAt = -1;
   let denominatorDigits = 0;
   let denominatorWidth = 0;
@@ -422,6 +432,11 @@ function parseSection(
           if (!sawDateField) firstDateFieldAt = i;
           sawDateField = true;
           i = close + 1;
+          if (elapsed === "elapsedSecond") {
+            const read = readSubSecond(source, i, to, subSecondDigits);
+            subSecondDigits = read.digits;
+            i = read.next;
+          }
           break;
         }
         if (!COLOUR_SET.has(body)) {
@@ -542,6 +557,16 @@ function parseSection(
           if (!sawDateField) firstDateFieldAt = i;
           sawDateField = true;
           i = end;
+
+          // `ss.00` -- a decimal point with digit places behind a seconds run
+          // asks for sub-second precision. It is read here rather than by the
+          // `.` branch because in a date section a bare `.` is a literal, and
+          // only the seconds field in front of it makes this one a point.
+          if (letter === "s") {
+            const read = readSubSecond(source, i, to, subSecondDigits);
+            subSecondDigits = read.digits;
+            i = read.next;
+          }
           break;
         }
         if (PASS_THROUGH.has(char)) {
@@ -596,6 +621,7 @@ function parseSection(
       dateTime: true,
       clock12,
       fraction: null,
+      subSecondDigits,
     };
   }
 
@@ -637,6 +663,7 @@ function parseSection(
           fixedDenominator ?? Math.max(1, 10 ** denominatorDigits - 1),
         denominatorWidth,
       },
+      subSecondDigits: 0,
     };
   }
 
@@ -655,6 +682,7 @@ function parseSection(
     dateTime: false,
     clock12: false,
     fraction: null,
+    subSecondDigits: 0,
   };
 }
 
@@ -711,6 +739,49 @@ function isRepeatOf(body: string, letter: string): boolean {
     if (char !== letter) return false;
   }
   return body.length > 0;
+}
+
+/**
+ * The largest sub-second precision a serial can carry.
+ *
+ * Measured rather than chosen: a serial is a double counting days, so its
+ * resolution in seconds grows with the date. At the last date the system
+ * represents, 9999-12-31, one unit in the last place is 4.0e-5 seconds — so
+ * a thousandth of a second is resolvable everywhere in range and a
+ * ten-thousandth is not, by a factor of four. A fourth digit would print
+ * noise, so it is refused rather than shown.
+ */
+export const MAX_SUB_SECOND_DIGITS = 3;
+
+/**
+ * Read the `.00` that may follow a seconds field.
+ *
+ * It is read here rather than by the `.` branch of the main loop because in
+ * a date section a bare `.` is an ordinary literal, and only a seconds field
+ * immediately in front of it makes this one a decimal point. `from` is the
+ * index just past the seconds field; the result says where to carry on.
+ */
+function readSubSecond(
+  source: string,
+  from: number,
+  to: number,
+  already: number,
+): { readonly digits: number; readonly next: number } {
+  if (source[from] !== ".") return { digits: already, next: from };
+  let end = from + 1;
+  while (end < to && isDigitChar(source[end])) end += 1;
+  const digits = end - (from + 1);
+  if (digits === 0) return { digits: already, next: from };
+  if (already > 0) {
+    throw new FormatCodeError("a section asks for sub-second precision twice", from);
+  }
+  if (digits > MAX_SUB_SECOND_DIGITS) {
+    throw new FormatCodeError(
+      `a serial cannot carry more than ${MAX_SUB_SECOND_DIGITS} sub-second digits`,
+      from + 1 + MAX_SUB_SECOND_DIGITS,
+    );
+  }
+  return { digits, next: end };
 }
 
 function isDigitChar(char: string | undefined): boolean {
