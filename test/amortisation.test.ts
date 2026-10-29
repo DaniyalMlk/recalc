@@ -244,9 +244,9 @@ describe("debt schedules", () => {
     expect(() =>
       amortisationSchedule({ ...LOAN, nper: MAX_SCHEDULE_PERIODS + 1 }),
     ).toThrow(/above the limit/);
-    expect(() => amortisationSchedule({ ...LOAN, type: 1 })).toThrow(
-      /annuity due/,
-    );
+    // An annuity due used to be refused here. It is tabulated now, with its
+    // own reading of the columns; `test/annuity-due.test.ts` holds that.
+    expect(() => amortisationSchedule({ ...LOAN, type: 1 })).not.toThrow();
   });
 });
 
@@ -277,6 +277,7 @@ describe("the .amortise command", () => {
       rate: 0.055 / 12,
       periods: 360,
       balloon: 0,
+      type: 0,
       into: undefined,
     });
     expect(parseAmortiseCommand("50000 at 0.05 over 10")).toMatchObject({
