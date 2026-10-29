@@ -619,11 +619,25 @@ function renderDateTime(section: FormatSection, serial: number): string {
   // Only a section that shows a clock rounds. A date format truncates, since
   // an instant late on the 4th is on the 4th and rounding it up would move
   // every afternoon to the following day.
-  const shown = hasClockField(section) ? Math.round(serial * 86400) / 86400 : serial;
+  //
+  // The precision rounded at is the precision the section shows: `ss` rounds
+  // to the second, `ss.00` to the hundredth. So a quarter-second before
+  // midnight rounds up under one and down under the other, and the date
+  // follows whichever way the clock went.
+  const clock = hasClockField(section);
+  const scale = clock ? 10 ** section.subSecondDigits : 1;
+  // Everything is derived from this one count so no two fields can round
+  // differently. `clockFromSerial` would round a sub-second remainder up into
+  // the seconds field, which is why the whole seconds are taken by flooring
+  // the count rather than by handing it the unrounded serial.
+  const units = clock ? Math.round(serial * 86400 * scale) : Math.floor(serial * 86400);
+  const wholeSeconds = Math.floor(units / scale);
+  const subSecond = units - wholeSeconds * scale;
+  const shown = clock ? wholeSeconds / 86400 : serial;
   const date = civilFromSerial(shown);
-  const clock = clockFromSerial(shown);
-  const hour12 = clock.hour % 12 === 0 ? 12 : clock.hour % 12;
-  const totalSeconds = Math.round(shown * 86400);
+  const parts = clockFromSerial(shown);
+  const hour12 = parts.hour % 12 === 0 ? 12 : parts.hour % 12;
+  const totalSeconds = wholeSeconds;
 
   let out = "";
   for (const token of section.tokens) {
@@ -638,10 +652,12 @@ function renderDateTime(section: FormatSection, serial: number): string {
         out += renderField(token.field, token.width, {
           serial: shown,
           date,
-          clock,
+          clock: parts,
           hour12,
           totalSeconds,
           clock12: section.clock12,
+          subSecond,
+          subSecondDigits: section.subSecondDigits,
         });
         break;
       default:
@@ -658,6 +674,20 @@ interface DateParts {
   readonly hour12: number;
   readonly totalSeconds: number;
   readonly clock12: boolean;
+  /** The sub-second remainder, in units of `10^-subSecondDigits` seconds. */
+  readonly subSecond: number;
+  readonly subSecondDigits: number;
+}
+
+/**
+ * The `.00` behind a seconds field, or nothing when none was written.
+ *
+ * The digits are a count of `10^-d` second units rather than a fraction
+ * re-derived here, so they cannot disagree with the seconds they follow.
+ */
+function subSecondText(parts: DateParts): string {
+  if (parts.subSecondDigits === 0) return "";
+  return "." + String(parts.subSecond).padStart(parts.subSecondDigits, "0");
 }
 
 function renderField(
@@ -687,7 +717,7 @@ function renderField(
     case "minute":
       return pad(clock.minute, Math.min(width, 2));
     case "second":
-      return pad(clock.second, Math.min(width, 2));
+      return pad(clock.second, Math.min(width, 2)) + subSecondText(parts);
     case "meridiem":
       return width === 5
         ? clock.hour < 12
@@ -701,7 +731,7 @@ function renderField(
     case "elapsedMinute":
       return pad(Math.floor(totalSeconds / 60), width);
     case "elapsedSecond":
-      return pad(totalSeconds, width);
+      return pad(totalSeconds, width) + subSecondText(parts);
     default:
       return "";
   }

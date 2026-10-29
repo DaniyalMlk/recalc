@@ -371,8 +371,8 @@ formatWith("h:mm AM/PM", 46081.5729).text;       // "1:44 PM"
 formatWith("[h]:mm", 1.5).text;                  // "36:00" - not "12:00"
 ```
 
-A section that shows a clock rounds the serial once, to the nearest second,
-and reads its calendar fields off the same rounded value. That matters only in
+A section that shows a clock rounds the serial once, at the precision it
+shows, and reads its calendar fields off the same rounded value. That matters only in
 the last half second of a day, and it matters a lot there: with the clock
 rounding and the date flooring, `2026-03-04 23:59:59.6` renders its clock as
 the next day's midnight beside the current day's date, which is a timestamp
@@ -387,6 +387,23 @@ been read, because in `m:ss` only the `ss` says so. `AM/PM` (or `A/P`) puts the
 hour on a 12-hour clock. The bracketed codes `[h]`, `[m]` and `[s]` are
 durations: they accumulate rather than wrap, which is what makes a day and a
 half print as `36:00`.
+
+Digit places behind a seconds field ask for sub-second precision, and the
+precision shown is the precision the whole timestamp is rounded at:
+
+```ts
+formatWith("hh:mm:ss.000", t).text;   // "12:34:56.960"
+formatWith("hh:mm:ss.0", t).text;     // "12:34:57.0"
+formatWith("hh:mm:ss", t).text;       // "12:34:57"
+```
+
+Three digits is the maximum, and it is measured rather than chosen. A serial
+is a double counting days, so its resolution in seconds grows with the date:
+at 9999-12-31 one unit in the last place is 4.0e-5 seconds. That is under a
+tenth of a thousandth and over a tenth of a ten-thousandth, so a thousandth
+carries information everywhere in range and a fourth digit would print the
+float's noise. A fourth is refused with the offset of the first digit it will
+not take.
 
 ## Debt schedules
 
@@ -1459,8 +1476,10 @@ than a wait.
 - Only one sheet; there are no cross-sheet references.
 - Scenarios are not serialised: they live for the length of a session, and CSV
   has nowhere to put them.
-- Sub-second format codes (`ss.00`) are not supported: a clock is rendered to
-  the nearest whole second.
+- A `.` in a date section that is not behind a seconds field is dropped: a
+  `d.m.yyyy` code renders as `432026`, and a second one in the same section
+  is refused outright. Separators in a date code have to be written as
+  something else.
 - A fraction code cannot be combined with a decimal point or a scientific
   exponent in the same section; both are refused with an offset. There is no
   reading of `0.0 ?/?` that is not already a fraction.
