@@ -521,3 +521,28 @@ tree green and the public API usable.
 - [x] The rendered clock read back and required within half of its own last
       place of the instant, at all four precisions over 1,204 values
 - [x] Eleven ways of getting it wrong confirmed to fail
+
+## Phase 34 — A schedule for an annuity due
+
+- [x] `type: 1` tabulated rather than refused, with the columns read in the
+      order the payment happens: `opening` is the balance carried into this
+      payment and `interest` is what accrued over the previous period on it
+- [x] The single invariant kept — each row's closing is the next row's
+      opening — which is what the refusal was protecting
+- [x] Period 1 carrying no interest, asserted rather than assumed, and
+      contrasted against the ordinary schedule which does charge it there
+- [x] The closing balance in advance taken as opening plus principal, since
+      the closed form gives the balance at the end of a period and the next
+      row opens before that period's interest
+- [x] `.amortise ... in advance` in the shell, spelled in words and readable
+      beside a balloon or a target in either order
+- [x] Every row's split checked against `IPMT` and `PPMT` at `type: 1`, so
+      the table and the per-period functions cannot drift apart
+- [x] The payment checked as the ordinary payment discounted one period,
+      which is the closed-form statement of paying sooner for less
+- [x] Three tolerances measured rather than chosen, each asserted non-zero so
+      it cannot pass by catching nothing
+- [x] One assertion marked as the tautology it is, and run over the ordinary
+      schedule where it has content
+- [x] The two principal columns found to be rotations of each other, pinned
+      on the interior rows, since nothing in the code says so

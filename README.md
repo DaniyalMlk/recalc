@@ -455,10 +455,31 @@ exactly `0` (or exactly the balloon) rather than a float a hair away from it —
 which is also what a lender does, since the last instalment on a real loan is a
 different number from the other 359.
 
-Payments at the end of each period only. An annuity due settles interest and
-principal in a different order, so those five columns would quietly mean
-something else; `IPMT`, `PPMT` and `CUMIPMT` take a `type` argument and handle
-it per period.
+Payments in advance are a schedule too, read in the order the payment actually
+happens:
+
+```
+> .amortise 10000 at 5% over 5 in advance
+    period    opening   payment    interest   principal    closing
+         1      10000  -2199.76           0    -2199.76    7800.24
+         2    7800.24  -2199.76    -390.012   -1809.748   5990.492
+         3   5990.492  -2199.76   -299.5246  -1900.2354  4090.2567
+         4  4090.2567  -2199.76  -204.51283  -1995.2471  2095.0095
+         5  2095.0095  -2199.76  -104.75048  -2095.0095          0
+     total             -10998.8  -998.79991      -10000
+```
+
+`opening` is the balance carried into *this* payment, `interest` is what
+accrued over the *previous* period on that balance, and `closing` is `opening`
+plus the period's principal. Period 1 carries no interest, because no time has
+passed before the first payment — which is the whole of why the same loan
+costs 999 in advance and 1,549 in arrears.
+
+Read that way the columns mean the same things under both conventions and the
+same single invariant holds: each row's closing balance is the next row's
+opening. One curiosity falls out of the shared closed form, and the tests pin
+it: the advance schedule's principal column is the ordinary one rotated by a
+row.
 
 ## Bonds
 
@@ -1490,8 +1511,8 @@ than a wait.
   cells in it.
 - CSV carries no formats: an export in `display` mode writes what the sheet
   shows, but that text does not read back in as the same numbers.
-- A debt schedule is built for payments at the end of each period; an annuity
-  due is available per period through `IPMT` and `PPMT` but not as a table.
+- A schedule assumes a single rate for the whole term: there is no step-up, no
+  reset off an index, and no way to tabulate a loan whose rate changes partway.
 - Names can only be defined from the library or the shell, not from the grid.
 - Reference highlighting outlines only references written out in the formula.
   A name is underlined in the formula bar and resolved in the inspector, but
