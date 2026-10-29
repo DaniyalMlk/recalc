@@ -20,7 +20,7 @@ source, so what recalculates there is what recalculates here.
 ## Status
 
 Every phase in [ROADMAP.md](ROADMAP.md) is complete: the formula grammar, the
-reference model, the dependency graph, the evaluator, a function library of 205
+reference model, the dependency graph, the evaluator, a function library of 206
 functions including financial, date, amortisation, bond, matrix, regression,
 distribution, inference and table packs, day-count
 conventions, debt schedules, CSV interchange, named ranges, a

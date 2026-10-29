@@ -82,8 +82,12 @@ describe("the figures outside the table", () => {
     expect(prose).toContain(`${count} functions`);
     // And not a different one: a stale count is exactly the failure this
     // whole arrangement exists to prevent, and it is the one the README
-    // carried for months.
-    expect(prose).not.toMatch(/\b(?!205\b)\d{3} functions/);
+    // carried for months. The number to allow comes from the registry, not
+    // from a literal -- a guard against a stale count that carries its own
+    // copy of the count is the same defect one level up.
+    expect(prose).not.toMatch(
+      new RegExp(`\\b(?!${count}\\b)\\d{3} functions`),
+    );
   });
 
   it("repeats the isolated-edit figure from the gate rather than typing it", () => {
