@@ -498,3 +498,26 @@ tree green and the public API usable.
       other on a date chosen so that they do
 - [x] The README's stale-count guard fixed: it held the function count as a
       literal, so adding a function made the guard the stale thing
+
+## Phase 33 — Sub-second precision
+
+- [x] `ss.0`, `ss.00`, `ss.000` and the duration form `[s].00` compiled, read
+      beside the seconds field rather than by the `.` branch, since in a date
+      section only a seconds run in front of a point makes it a point
+- [x] The serial rounded once at the precision the section shows, so the same
+      instant rounds up at one precision and down at another and the date
+      follows whichever way the clock went
+- [x] Every field derived from one count of sub-second units, with the whole
+      seconds floored out of it rather than taken from the clock splitter,
+      which would round a remainder up into the seconds field
+- [x] A limit of three digits, measured: the representation step at the
+      furthest date is 4.0e-5 seconds, under a tenth of the smallest unit
+      allowed and over a tenth of the next one down
+- [x] A fourth digit refused with the offset of the first character it will
+      not take, rather than printing the float's noise
+- [x] A bare point left for the main loop, which is what keeps a second point
+      in the same section refused instead of quietly swallowed
+- [x] The whole-second behaviour unchanged where no digits are written
+- [x] The rendered clock read back and required within half of its own last
+      place of the instant, at all four precisions over 1,204 values
+- [x] Eleven ways of getting it wrong confirmed to fail
