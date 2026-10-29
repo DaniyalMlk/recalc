@@ -322,7 +322,8 @@ function renderTwoWay(table: TwoWayTable, ink: Ink): string {
 // ---------------------------------------------------------------------------
 
 const AMORTISE_USAGE =
-  "usage: .amortise 250000 at 5.5%/12 over 360 [balloon 100000] [into D1]";
+  "usage: .amortise 250000 at 5.5%/12 over 360 " +
+  "[in advance] [balloon 100000] [into D1]";
 
 interface AmortiseCommand {
   readonly principal: number;
@@ -330,11 +331,13 @@ interface AmortiseCommand {
   readonly periods: number;
   /** What is still owed at the end, as a positive amount. */
   readonly balloon: number;
+  /** 1 when payments are made at the start of each period. */
+  readonly type: 0 | 1;
   readonly into?: string | undefined;
 }
 
 /**
- * `250000 at 5.5%/12 over 360 [balloon 100000] [into D1]`
+ * `250000 at 5.5%/12 over 360 [in advance] [balloon 100000] [into D1]`
  *
  * The rate is written the way it is quoted — an annual percentage over the
  * number of payments in a year — because that is how a term sheet states it,
@@ -352,6 +355,16 @@ export function parseAmortiseCommand(tail: string): AmortiseCommand | string {
     if (target === null) return `not a cell address: ${intoMatch[1]}`;
     into = target;
     rest = rest.slice(0, intoMatch.index);
+  }
+
+  // `in advance` is read before the balloon so the two can be written in
+  // either order, and it is spelled in words rather than as `type 1` because
+  // the shell is the surface a person types at.
+  let type: 0 | 1 = 0;
+  const advanceMatch = /\s+in\s+advance\b/i.exec(rest);
+  if (advanceMatch !== null) {
+    type = 1;
+    rest = rest.slice(0, advanceMatch.index) + rest.slice(advanceMatch.index + advanceMatch[0].length);
   }
 
   let balloon = 0;
@@ -384,7 +397,7 @@ export function parseAmortiseCommand(tail: string): AmortiseCommand | string {
     return `not a whole number of periods: ${main[4]}`;
   }
 
-  return { principal, rate: quoted / perYear, periods, balloon, into };
+  return { principal, rate: quoted / perYear, periods, balloon, type, into };
 }
 
 function amount_(text: string): number | null {
@@ -417,7 +430,7 @@ export function amortiseCommand(
       nper: parsed.periods,
       pv: parsed.principal,
       fv: -parsed.balloon,
-      type: 0,
+      type: parsed.type,
     });
     if (parsed.into !== undefined) {
       const { cells } = writeSchedule(book, parsed.into, schedule);
