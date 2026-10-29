@@ -13,9 +13,11 @@
  * positions, and the two never mix. That split is what keeps `m` from having
  * to mean "month" and "a digit place" at once.
  *
- * Deliberately absent: fraction codes. `# ?/?` needs a rational approximation
- * that has nothing to do with the digit machinery here, and is rejected at
- * parse time with a position rather than silently mis-formatted.
+ * Fraction codes are a third kind of section, split off for the same reason:
+ * `# ?/?` lays out a whole part, a numerator and a denominator rather than a
+ * run of digit positions around a point, and the number it needs is a
+ * rational approximation rather than a rounded decimal. The approximation
+ * lives in `rational.ts`; what is here is only the layout.
  */
 
 /** Where a parse gave up, so a caller can point at the offending character. */
@@ -96,6 +98,34 @@ export type DateTimeField =
   | "elapsedMinute"
   | "elapsedSecond";
 
+/**
+ * How a fraction section is laid out.
+ *
+ * The split between the whole part and the numerator is positional: the
+ * numerator is the run of digit positions immediately before the `/`, and
+ * whatever digit positions come before that run, separated from it by
+ * anything at all, are the whole part. So `# ??/??` has a whole part and
+ * `??/??` does not — the second is an improper fraction, and 1.75 under it is
+ * `7/4` rather than `1 3/4`.
+ *
+ * The denominator is written one of two ways and they mean different things.
+ * Digit positions (`?/??`) bound it: the result is the closest fraction whose
+ * denominator fits in that many digits. A literal (`?/8`) fixes it: the value
+ * is rounded to the nearest eighth whether or not something closer exists.
+ */
+export interface FractionSpec {
+  /** Digit positions for the whole part. Zero means an improper fraction. */
+  readonly wholeDigits: number;
+  /** Digit positions in the numerator. At least one. */
+  readonly numeratorDigits: number;
+  /** The denominator a literal code fixed, or null when the code bounds it. */
+  readonly fixedDenominator: number | null;
+  /** The largest denominator allowed: the literal, or `10^digits - 1`. */
+  readonly maxDenominator: number;
+  /** How many characters the denominator occupies, for the blanking rule. */
+  readonly denominatorWidth: number;
+}
+
 /** One `;`-delimited branch of a format code. */
 export interface FormatSection {
   readonly tokens: readonly FormatToken[];
@@ -122,6 +152,8 @@ export interface FormatSection {
   readonly dateTime: boolean;
   /** True when an `AM/PM` marker puts the hour field on a 12-hour clock. */
   readonly clock12: boolean;
+  /** How to lay out a fraction, when the section is one. */
+  readonly fraction: FractionSpec | null;
 }
 
 /**
@@ -265,6 +297,10 @@ function parseSection(
   let sawDateField = false;
   let firstDateFieldAt = -1;
   let clock12 = false;
+  let fractionBarAt = -1;
+  let denominatorDigits = 0;
+  let denominatorWidth = 0;
+  let fixedDenominator: number | null = null;
 
   /**
    * A comma's meaning depends on what comes after it: between digit positions
@@ -414,13 +450,54 @@ function parseSection(
       }
 
       case "/": {
-        // A `/` between digit positions is a fraction code, which is out of
-        // scope; standing alone it is an ordinary separator.
-        if (intDigits + decimals > 0 && isDigitChar(source[i + 1])) {
-          throw new FormatCodeError("fraction format codes are not supported", i);
+        // A `/` with digit positions on its left and something numeric on its
+        // right is a fraction bar. Standing alone it is an ordinary separator,
+        // which is what keeps `d/m/yyyy` a date.
+        const run = denominatorRun(source, i + 1, to);
+        const precededByDigit = tokens[tokens.length - 1]?.kind === "digit";
+        if (!precededByDigit || run.length === 0) {
+          tokens.push({ kind: "literal", text: "/" });
+          i += 1;
+          break;
         }
+        if (fractionBarAt >= 0) {
+          throw new FormatCodeError("a section has one fraction bar", i);
+        }
+        if (seenPoint) {
+          throw new FormatCodeError(
+            "a fraction code cannot also have a decimal point",
+            i,
+          );
+        }
+        if (seenExponent) {
+          throw new FormatCodeError(
+            "a fraction code cannot also be scientific",
+            i,
+          );
+        }
+
+        fractionBarAt = tokens.length;
         tokens.push({ kind: "literal", text: "/" });
-        i += 1;
+
+        // The denominator's own characters are consumed here rather than left
+        // to the loop, because `0` is both a digit position and a literal
+        // digit and only its neighbours settle which: the `0` of `?/10` is
+        // part of the number ten, and the `0` of `?/00` is a place to put one.
+        if (run.fixed === null) {
+          for (let d = 0; d < run.length; d += 1) {
+            const pad =
+              run.text[d] === "0" ? "zero" : run.text[d] === "#" ? "none" : "space";
+            tokens.push({ kind: "digit", pad });
+          }
+          denominatorDigits = run.length;
+          fixedDenominator = null;
+        } else {
+          tokens.push({ kind: "literal", text: run.text });
+          denominatorDigits = 0;
+          fixedDenominator = run.fixed;
+        }
+        denominatorWidth = run.length;
+        i += 1 + run.length;
         break;
       }
 
@@ -518,6 +595,48 @@ function parseSection(
       literalOnly: false,
       dateTime: true,
       clock12,
+      fraction: null,
+    };
+  }
+
+  if (fractionBarAt >= 0) {
+    if (hasText) {
+      throw new FormatCodeError(
+        "a fraction code cannot also carry a text placeholder",
+        from,
+      );
+    }
+    const split = splitAtFractionBar(tokens, fractionBarAt);
+    // The numerator is every digit position that is not in the whole part and
+    // not in the denominator, so what remains for the whole part is what the
+    // section's integer layout should use.
+    const pads = tokens
+      .filter((token) => token.kind === "digit")
+      .slice(0, split.wholeDigits);
+    return {
+      tokens: tokenList,
+      colour,
+      intDigits: split.wholeDigits,
+      minIntDigits: pads.filter(
+        (token) => token.kind === "digit" && token.pad !== "none",
+      ).length,
+      decimals: 0,
+      grouped,
+      scaleBy,
+      percents,
+      exponentDigits: 0,
+      hasTextPlaceholder: false,
+      literalOnly: false,
+      dateTime: false,
+      clock12: false,
+      fraction: {
+        wholeDigits: split.wholeDigits,
+        numeratorDigits: split.numeratorDigits,
+        fixedDenominator,
+        maxDenominator:
+          fixedDenominator ?? Math.max(1, 10 ** denominatorDigits - 1),
+        denominatorWidth,
+      },
     };
   }
 
@@ -535,6 +654,7 @@ function parseSection(
     literalOnly: intDigits + decimals === 0 && !hasText,
     dateTime: false,
     clock12: false,
+    fraction: null,
   };
 }
 
@@ -595,4 +715,52 @@ function isRepeatOf(body: string, letter: string): boolean {
 
 function isDigitChar(char: string | undefined): boolean {
   return char === "0" || char === "#" || char === "?";
+}
+
+/**
+ * Read the denominator sitting after a `/`.
+ *
+ * The run is every character from there that could belong to a denominator:
+ * the digit positions `0`, `#` and `?`, and the plain digits `0` to `9`. What
+ * the run *means* then depends on whether a plain digit other than zero
+ * appears in it. `?/16` names sixteenths; `?/??` asks for any denominator up
+ * to two digits. `0` is the overlap, and it goes with the rest of its run:
+ * the zero of `/10` is part of ten, and the zero of `/00` is a place.
+ *
+ * A run of length zero means there was no denominator, so the `/` was not a
+ * fraction bar at all.
+ */
+function denominatorRun(
+  source: string,
+  from: number,
+  to: number,
+): { readonly length: number; readonly text: string; readonly fixed: number | null } {
+  let end = from;
+  while (end < to && (isDigitChar(source[end]) || /[0-9]/.test(source[end]!))) {
+    end += 1;
+  }
+  const text = source.slice(from, end);
+  if (text.length === 0) return { length: 0, text, fixed: null };
+  const literal = /^[0-9]+$/.test(text) && /[1-9]/.test(text);
+  return { length: text.length, text, fixed: literal ? Number(text) : null };
+}
+
+/**
+ * Where the numerator ends and the whole part begins.
+ *
+ * The numerator is the unbroken run of digit positions ending at the fraction
+ * bar. Anything before that run — a digit position with so much as a space
+ * between it and the numerator — belongs to the whole part.
+ */
+function splitAtFractionBar(
+  tokens: readonly FormatToken[],
+  barAt: number,
+): { readonly wholeDigits: number; readonly numeratorDigits: number } {
+  let start = barAt;
+  while (start > 0 && tokens[start - 1]!.kind === "digit") start -= 1;
+  let wholeDigits = 0;
+  for (let k = 0; k < start; k += 1) {
+    if (tokens[k]!.kind === "digit") wholeDigits += 1;
+  }
+  return { wholeDigits, numeratorDigits: barAt - start };
 }
