@@ -423,3 +423,32 @@ tree green and the public API usable.
 - [x] Looked at rather than assumed: loaded at three widths in a browser,
       screenshotted and read, which is how the footer's broken measure, the
       demo frame's border and an unreadable table at phone width were found
+
+## Phase 30 — Fraction format codes
+
+- [x] A best rational approximation under a bounded denominator, as a
+      continued-fraction expansion with the semiconvergents considered, so the
+      result is the closest fraction in range and not merely a close one
+- [x] The exhaustive scan that answers the same question kept as the test's
+      reference rather than as the engine's answer, since a format is
+      re-applied on every repaint
+- [x] Agreement with that scan on the pair and not only on the error, over
+      5,213 value-and-bound combinations plus a set of irrationals, which
+      makes the tie rule part of the claim
+- [x] Both shapes compiled: a bounded denominator written as digit positions
+      and a fixed one written as a literal, with `0` resolved by the rest of
+      its run rather than by itself
+- [x] The numerator taken as the unbroken run of positions before the bar, so
+      `??/??` is improper and `# ??/??` is not
+- [x] A lone slash left as a separator, which is what keeps a date a date
+- [x] The numerator padded left and the denominator padded right, so the bar
+      holds one column down a sheet — asserted against a column of values, and
+      separately asserted to move when the whole part widens
+- [x] Carrying into the whole part, and omitted for an improper code
+- [x] A numerator that rounds away dropping the fraction but keeping its width
+- [x] The rendered text parsed back and compared with the approximation it
+      should carry, over 753 values, which covers the layout and the
+      arithmetic in one assertion
+- [x] Twenty-four ways of getting it wrong confirmed to fail, including the
+      two alignments swapped, a carry applied to an improper code, and a lone
+      slash read as a fraction bar
