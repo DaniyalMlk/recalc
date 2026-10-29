@@ -222,3 +222,70 @@ export function isMonthEnd(serial: number): boolean {
   const { year, month, day } = civilFromSerial(serial);
   return day === daysInMonth(year, month);
 }
+
+/** An ISO 8601 week: its number, and the year that week belongs to. */
+export interface IsoWeek {
+  /** The week number, 1 to 53. */
+  readonly week: number;
+  /**
+   * The year the week belongs to, which is not always the calendar year of
+   * the date. 2027-01-01 is in week 53 of 2026.
+   */
+  readonly weekYear: number;
+}
+
+/**
+ * The ISO 8601 week a serial falls in.
+ *
+ * The rule is not a variant of "count from 1 January". Weeks always start on
+ * Monday, and week 1 is the week holding the first Thursday of the year —
+ * equivalently, the week holding 4 January, and equivalently again the first
+ * week with most of its days in the new year. Each of those three phrasings
+ * is the same rule and the Thursday one is the easiest to compute with: the
+ * year a week belongs to is the calendar year of its Thursday.
+ *
+ * So the first days of January often belong to week 52 or 53 of the previous
+ * year, and the last days of December often belong to week 1 of the next.
+ * That is why the week number is returned with a year beside it. A week
+ * number on its own is ambiguous at exactly the boundary where someone is
+ * most likely to be reading it.
+ *
+ * A year has 53 ISO weeks when it starts on a Thursday, or when it is a leap
+ * year starting on a Wednesday — both of which put a 53rd Thursday inside it.
+ * Every other year has 52.
+ *
+ * The weekday comes from {@link weekdayIndex}, so this inherits the phantom
+ * leap day the same way every other weekday question in the system does.
+ */
+export function isoWeekOf(serial: number): IsoWeek {
+  const day = Math.floor(serial);
+  // Monday is 0 under this shift; `weekdayIndex` counts Sunday as 0.
+  const weekdayFromMonday = (weekdayIndex(day) + 6) % 7;
+  // The Thursday of this date's week is what names the week and its year:
+  // step back to Monday, then forward three days.
+  const thursday = day - weekdayFromMonday + 3;
+  const weekYear = civilFromSerial(thursday).year;
+  // Week 1 is the week holding 4 January, so its Monday is the Monday on or
+  // before that date, and the week number counts from there.
+  const january4 = serialFromCivil(weekYear, 1, 4);
+  const firstMonday = january4 - ((weekdayIndex(january4) + 6) % 7);
+  return {
+    week: Math.floor((day - firstMonday) / 7) + 1,
+    weekYear,
+  };
+}
+
+/**
+ * How many ISO weeks a year has: 53 when it holds 53 Thursdays, else 52.
+ *
+ * Exposed because it is the cheapest honest way to check the week numbering
+ * from the outside — the last week of a year must be exactly this.
+ */
+export function isoWeeksInYear(year: number): number {
+  const lastDay = serialFromCivil(year, 12, 31);
+  const { week } = isoWeekOf(lastDay);
+  // 31 December is in week 1 of the next year when the year has 52 weeks and
+  // the spill reaches that far, so the answer is the week of the last
+  // Thursday rather than of the last day.
+  return week === 1 ? isoWeekOf(lastDay - 7).week : week;
+}

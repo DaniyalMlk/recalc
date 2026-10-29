@@ -475,3 +475,26 @@ tree green and the public API usable.
       the fields agreeing and pinned them disagreeing
 - [x] Seven ways of getting it wrong confirmed to fail, after two that were
       verified to be no-op substitutions were dropped rather than counted
+
+## Phase 32 — Week numbering, both rules
+
+- [x] `isoWeekOf` returning the ISO 8601 week with the year that week belongs
+      to, since a week number alone is ambiguous at exactly the boundary where
+      it is most likely to be read
+- [x] `isoWeeksInYear` derived from the year's own shape rather than looked up
+- [x] `ISOWEEKNUM` on the sheet, and `WEEKNUM` accepting return types 11
+      through 17 and 21 alongside the 1 and 2 it had
+- [x] Type 21 answered by the date module rather than by the arithmetic beside
+      it, because it is a different rule and not a parameter of the same one
+- [x] Checked against the platform calendar, which shares none of the serial
+      arithmetic, the epoch or the phantom leap day: 2,548 dates over 196
+      years, weighted at the boundaries, with a midsummer control
+- [x] Every week of a long year numbered once in order, which a rule that
+      drifts a day mid-year would fail while passing every boundary check
+- [x] A year starting on each of the seven weekdays covered, and every year's
+      length checked against its own shape over those 196 years
+- [x] The contrast asserted rather than assumed: 1 January is week 1 under
+      every simple type and is not under ISO, and the types disagree with each
+      other on a date chosen so that they do
+- [x] The README's stale-count guard fixed: it held the function count as a
+      literal, so adding a function made the guard the stale thing

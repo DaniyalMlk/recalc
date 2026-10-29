@@ -20,7 +20,7 @@ source, so what recalculates there is what recalculates here.
 ## Status
 
 Every phase in [ROADMAP.md](ROADMAP.md) is complete: the formula grammar, the
-reference model, the dependency graph, the evaluator, a function library of 205
+reference model, the dependency graph, the evaluator, a function library of 206
 functions including financial, date, amortisation, bond, matrix, regression,
 distribution, inference and table packs, day-count
 conventions, debt schedules, CSV interchange, named ranges, a
@@ -191,6 +191,40 @@ bug would put this engine one day out from every other for two months of 1900
 while agreeing everywhere else. Reproducing it properly means going all the way,
 so the system behaves as if that calendar were real and a difference of dates is
 a difference of serials, with no correction anywhere.
+
+### Week numbering
+
+There are two rules and they are not variants of one another:
+
+```
+=WEEKNUM(DATE(2027,1,1), 1)    →  1    the week holding 1 January is week 1
+=WEEKNUM(DATE(2027,1,1), 21)   →  53   ISO 8601
+=ISOWEEKNUM(DATE(2027,1,1))    →  53
+```
+
+Under the simple scheme 1 January is always in week 1, so a year's first week
+can be as short as one day — under a Friday-start week, week 1 of 2026 is the
+single day Thursday 1 January. Return types 1 and 2 start weeks on Sunday and
+Monday; 11 through 17 start them on each day from Monday round to Sunday.
+(2 and 11 are the same rule spelled twice, which is a historical accident.)
+
+ISO 8601 is type 21, and `ISOWEEKNUM` is the same answer under its own name.
+Weeks always start on Monday and week 1 is the week holding the first Thursday,
+so the first days of January often belong to week 52 or 53 of the previous
+year. That is why the library returns a *week-year* beside the number:
+
+```ts
+import { isoWeekOf, isoWeeksInYear } from "recalc-formula";
+
+isoWeekOf(serialFromCivil(2027, 1, 1));   // { week: 53, weekYear: 2026 }
+isoWeeksInYear(2026);                     // 53
+isoWeeksInYear(2025);                     // 52
+```
+
+Reporting that 53 against 2027 would be wrong by a year rather than by a week.
+A year has 53 ISO weeks when it starts on a Thursday, or when it is a leap year
+starting on a Wednesday; both put a 53rd Thursday inside it. The worksheet
+function returns the number alone, as every spreadsheet does.
 
 `YEARFRAC` is where the conventions live. The same two dates give five different
 answers, and which one is right is a matter of what was agreed, not of what is
@@ -1425,8 +1459,8 @@ than a wait.
 - Only one sheet; there are no cross-sheet references.
 - Scenarios are not serialised: they live for the length of a session, and CSV
   has nowhere to put them.
-- Sub-second format codes (`ss.00`) are not supported, and neither is ISO week
-  numbering — `WEEKNUM` counts the week holding 1 January as week 1.
+- Sub-second format codes (`ss.00`) are not supported: a clock is rendered to
+  the nearest whole second.
 - A fraction code cannot be combined with a decimal point or a scientific
   exponent in the same section; both are refused with an offset. There is no
   reading of `0.0 ?/?` that is not already a fraction.
