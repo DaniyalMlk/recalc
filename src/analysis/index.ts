@@ -39,9 +39,15 @@ export {
   MAX_SCHEDULE_PERIODS,
   ScheduleError,
   amortisationSchedule,
+  steppedSchedule,
   writeSchedule,
 } from "./amortisation.js";
-export type { Schedule, SchedulePeriod } from "./amortisation.js";
+export type {
+  RateSegment,
+  RateStep,
+  Schedule,
+  SchedulePeriod,
+} from "./amortisation.js";
 
 export { ScenarioError, ScenarioSet } from "./scenarios.js";
 export type {

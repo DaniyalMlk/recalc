@@ -27,8 +27,13 @@ import {
   writeTwoWayTable,
 } from "./table.js";
 import type { OneWayTable, TwoWayTable } from "./table.js";
-import { ScheduleError, amortisationSchedule, writeSchedule } from "./amortisation.js";
-import type { Schedule } from "./amortisation.js";
+import {
+  ScheduleError,
+  amortisationSchedule,
+  steppedSchedule,
+  writeSchedule,
+} from "./amortisation.js";
+import type { RateStep, Schedule } from "./amortisation.js";
 import { RegressionError, parseRegressCommand, summarise } from "./regression.js";
 import type { Summary } from "./regression.js";
 
@@ -323,7 +328,7 @@ function renderTwoWay(table: TwoWayTable, ink: Ink): string {
 
 const AMORTISE_USAGE =
   "usage: .amortise 250000 at 5.5%/12 over 360 " +
-  "[in advance] [balloon 100000] [into D1]";
+  "[then 7% from 121] [in advance] [balloon 100000] [into D1]";
 
 interface AmortiseCommand {
   readonly principal: number;
@@ -334,6 +339,8 @@ interface AmortiseCommand {
   /** 1 when payments are made at the start of each period. */
   readonly type: 0 | 1;
   readonly into?: string | undefined;
+  /** Rate changes, in the order they were written. */
+  readonly steps: readonly RateStep[];
 }
 
 /**
@@ -367,6 +374,34 @@ export function parseAmortiseCommand(tail: string): AmortiseCommand | string {
     rest = rest.slice(0, advanceMatch.index) + rest.slice(advanceMatch.index + advanceMatch[0].length);
   }
 
+  // `then <rate> from <period>`, repeatable, lifted out before the balloon
+  // and the main pattern so that either of those may be written after it.
+  // A step's rate is quoted the way the loan's own is; written without a
+  // divisor it inherits the loan's, since a term sheet quoting 5.5%/12 goes
+  // on to quote the reset as 7% and means 7%/12 by it.
+  const quotedSteps: { rate: number; perYear: number | null; from: number }[] = [];
+  const stepPattern = /\s+then\s+(\S+?)(?:\s*\/\s*(\d+(?:\.\d+)?))?\s+from\s+(\S+)/gi;
+  let stepMatch = stepPattern.exec(rest);
+  while (stepMatch !== null) {
+    const quoted = rate_(stepMatch[1]!);
+    if (quoted === null) return `not a rate: ${stepMatch[1]}`;
+    let perYear: number | null = null;
+    if (stepMatch[2] !== undefined) {
+      const divisor = Number(stepMatch[2]);
+      if (!Number.isFinite(divisor) || divisor <= 0) {
+        return `not a number of periods a year: ${stepMatch[2]}`;
+      }
+      perYear = divisor;
+    }
+    const from = Number(stepMatch[3]);
+    if (!Number.isInteger(from) || from < 2) {
+      return `not a period a rate can step at: ${stepMatch[3]}`;
+    }
+    quotedSteps.push({ rate: quoted, perYear, from });
+    stepMatch = stepPattern.exec(rest);
+  }
+  rest = rest.replace(stepPattern, "");
+
   let balloon = 0;
   const balloonMatch = /\s+balloon\s+(\S+)$/i.exec(rest);
   if (balloonMatch !== null) {
@@ -397,7 +432,20 @@ export function parseAmortiseCommand(tail: string): AmortiseCommand | string {
     return `not a whole number of periods: ${main[4]}`;
   }
 
-  return { principal, rate: quoted / perYear, periods, balloon, type, into };
+  const steps = quotedSteps.map((step) => ({
+    from: step.from,
+    rate: step.rate / (step.perYear ?? perYear),
+  }));
+
+  return {
+    principal,
+    rate: quoted / perYear,
+    periods,
+    balloon,
+    type,
+    into,
+    steps,
+  };
 }
 
 function amount_(text: string): number | null {
@@ -425,13 +473,17 @@ export function amortiseCommand(
   if (typeof parsed === "string") return ink.bad(`  ${parsed}`);
 
   try {
-    const schedule = amortisationSchedule({
+    const terms = {
       rate: parsed.rate,
       nper: parsed.periods,
       pv: parsed.principal,
       fv: -parsed.balloon,
       type: parsed.type,
-    });
+    };
+    const schedule =
+      parsed.steps.length > 0
+        ? steppedSchedule(terms, parsed.steps)
+        : amortisationSchedule(terms);
     if (parsed.into !== undefined) {
       const { cells } = writeSchedule(book, parsed.into, schedule);
       return `  ${cells} cell(s) written at ${parsed.into}`;
@@ -451,8 +503,12 @@ export function amortiseCommand(
  * schedule prints, with a count of what was left out.
  */
 function renderSchedule(schedule: Schedule, ink: Ink): string {
+  // A rate column is only worth its width once there is more than one rate to
+  // put in it, which for a loan on a single rate is the loan's own heading.
+  const stepped = schedule.segments.length > 1;
   const header = [
     "period",
+    ...(stepped ? ["rate"] : []),
     "opening",
     "payment",
     "interest",
@@ -461,6 +517,7 @@ function renderSchedule(schedule: Schedule, ink: Ink): string {
   ];
   const row = (period: Schedule["periods"][number]): string[] => [
     String(period.period),
+    ...(stepped ? [`${(period.rate * 100).toFixed(4)}%`] : []),
     short(period.opening),
     short(period.payment),
     short(period.interest),
@@ -468,16 +525,18 @@ function renderSchedule(schedule: Schedule, ink: Ink): string {
     short(period.closing),
   ];
 
+  const gap = new Array(header.length - 1).fill("");
   const shown = schedule.periods.length <= 14
     ? schedule.periods.map(row)
     : [
         ...schedule.periods.slice(0, 6).map(row),
-        [`… ${schedule.periods.length - 12} more`, "", "", "", "", ""],
+        [`… ${schedule.periods.length - 12} more`, ...gap],
         ...schedule.periods.slice(-6).map(row),
       ];
 
   const totals = [
     "total",
+    ...(stepped ? [""] : []),
     "",
     short(schedule.totalInterest + schedule.totalPrincipal),
     short(schedule.totalInterest),

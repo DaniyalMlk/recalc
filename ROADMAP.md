@@ -570,3 +570,41 @@ tree green and the public API usable.
       strings, over five shapes and eight dates, and the rendered fields
       checked against what the serial module says the date is
 - [x] Ten ways of getting it wrong confirmed to fail
+
+## Phase 36 — A schedule for a loan whose rate changes partway
+
+- [x] `steppedSchedule(terms, steps)`, a step being a rate and the period it
+      runs from, with the payment re-amortised at each one over the periods
+      remaining to the original maturity — the payment moves, the term does not
+- [x] Rows inside a segment computed from the closed form, as a single-rate
+      schedule's are, so only the boundaries chain and the residue is bounded
+      by the number of resets rather than the number of periods
+- [x] A schedule with no steps equal to the single-rate builder's to the last
+      bit, through the segment path rather than by delegating to it
+- [x] Steps that all name the rate the loan already had equal to it within
+      1.892e-10 on a 200,000 loan over five boundaries, which is 9.5e-16 of
+      the principal and does not grow with the number of boundaries
+- [x] The residue asserted non-zero as well as small, so the tolerance cannot
+      pass by catching nothing
+- [x] Each row's interest exactly its own opening times its own rate, each
+      closing the next opening, and the last closing exactly the balloon
+- [x] The payment level inside a segment and asserted to differ across one,
+      which an implementation that never recomputed it would otherwise satisfy
+- [x] What a step costs measured rather than assumed: half the term at each of
+      two rates is 6.0% under the average of the two flat loans one way round
+      and 5.5% over it the other, and the two orders are 27,978 apart on a
+      200,000 loan
+- [x] The mechanism behind that asserted too, since it is easy to get
+      backwards — the high-rate-first loan has the larger payment and still
+      amortises more slowly, because more of each payment is interest
+- [x] `.amortise ... then <rate> from <period>` in the shell, repeatable,
+      readable on either side of a balloon or a target, and inheriting the
+      loan's own divisor when the reset omits one
+- [x] A rate column in the printed table and in the block laid into the sheet,
+      only once there is more than one rate to put in it, with the single-rate
+      output unchanged down to the 42 cells it writes
+- [x] Payments in advance with a step refused, with the reason rather than a
+      bare refusal, and the reason written into the gap list
+- [x] An evidence row pairing the agreement with the divergence, so a builder
+      that ignored which rate came first would fail it
+- [x] Fourteen ways of getting it wrong confirmed to fail

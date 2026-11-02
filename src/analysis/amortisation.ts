@@ -67,6 +67,24 @@ export interface SchedulePeriod {
   readonly principal: number;
   /** What is owed once the period's payment has been made. */
   readonly closing: number;
+  /** The periodic rate this row's interest was charged at. */
+  readonly rate: number;
+}
+
+/** A rate change: from this period onward, this is the rate. */
+export interface RateStep {
+  /** The first period the new rate applies to; two or more. */
+  readonly from: number;
+  readonly rate: number;
+}
+
+/** A stretch of the term over which the rate, and so the payment, is level. */
+export interface RateSegment {
+  readonly from: number;
+  readonly through: number;
+  readonly rate: number;
+  /** The instalment this stretch was re-amortised to, negative. */
+  readonly payment: number;
 }
 
 export interface Schedule {
@@ -77,6 +95,13 @@ export interface Schedule {
   readonly totalInterest: number;
   /** Principal over the whole term; it repays the loan exactly. */
   readonly totalPrincipal: number;
+  /**
+   * The term cut at its rate changes, one entry per level stretch.
+   *
+   * A loan on a single rate has exactly one, which is what lets everything
+   * downstream read a schedule the same way whether or not its rate moves.
+   */
+  readonly segments: readonly RateSegment[];
 }
 
 /**
@@ -159,13 +184,188 @@ export function amortisationSchedule(terms: LoanTerms): Schedule {
       interest: unsignZero(interest),
       principal,
       closing,
+      rate: settled.rate,
     });
   }
 
   const totalInterest = periods.reduce((sum, row) => sum + row.interest, 0);
   const totalPrincipal = periods.reduce((sum, row) => sum + row.principal, 0);
 
-  return { terms: settled, payment, periods, totalInterest, totalPrincipal };
+  return {
+    terms: settled,
+    payment,
+    periods,
+    totalInterest,
+    totalPrincipal,
+    segments: [{ from: 1, through: count, rate: settled.rate, payment }],
+  };
+}
+
+/**
+ * Cut a term at its rate changes.
+ *
+ * Each segment runs to the period before the next step, or to the end of the
+ * term. The steps are checked here rather than where they are used so that a
+ * schedule is either built from a coherent set of them or not built at all.
+ */
+function segmentTerm(
+  count: number,
+  baseRate: number,
+  steps: readonly RateStep[],
+): readonly { from: number; through: number; rate: number }[] {
+  let previousFrom = 1;
+  for (const step of steps) {
+    if (!Number.isFinite(step.rate)) {
+      throw new ScheduleError("a rate step must be a finite number");
+    }
+    if (!Number.isInteger(step.from)) {
+      throw new ScheduleError(
+        `a rate step starts at a whole period, not ${step.from}`,
+      );
+    }
+    if (step.from < 2) {
+      throw new ScheduleError(
+        "a rate step starts at period 2 or later; period 1 is the loan's own rate",
+      );
+    }
+    if (step.from > count) {
+      throw new ScheduleError(
+        `a rate step at period ${step.from} is past the last period, ${count}`,
+      );
+    }
+    if (step.from <= previousFrom) {
+      throw new ScheduleError(
+        "rate steps run in order, one to a period",
+      );
+    }
+    previousFrom = step.from;
+  }
+
+  const starts = [1, ...steps.map((step) => step.from)];
+  const rates = [baseRate, ...steps.map((step) => step.rate)];
+  return starts.map((from, index) => ({
+    from,
+    through: (starts[index + 1] ?? count + 1) - 1,
+    rate: rates[index]!,
+  }));
+}
+
+/**
+ * Build the schedule a loan implies when its rate changes partway.
+ *
+ * Between two changes the rate is level, so that stretch is an ordinary
+ * annuity and the closed form still applies to it — on the balance entering
+ * the stretch, over the periods remaining to the original maturity. That last
+ * part is the convention a reset actually follows: the lender re-amortises
+ * what is left so the loan still retires on its maturity date at the new rate,
+ * which is why the payment moves rather than the term.
+ *
+ * So the rows inside a segment are computed, not chained, exactly as a
+ * single-rate schedule's are; only the boundaries chain. The error that can
+ * collect is bounded by the number of resets rather than the number of
+ * periods, which for any loan anyone writes is a handful.
+ *
+ * **Payments in advance are refused.** A reset in advance has the two rates
+ * meeting inside one row: the payment at the start of the period is the one
+ * the new rate re-amortised, while the interest that payment settles accrued
+ * over the period just gone, at the old rate. Which of the two the row should
+ * report is a question about the instrument, not about arithmetic, and
+ * answering it by picking whichever rate the code reached first is how a
+ * schedule comes to disagree with the loan it describes.
+ */
+export function steppedSchedule(
+  terms: LoanTerms,
+  steps: readonly RateStep[],
+): Schedule {
+  if (steps.length === 0) {
+    // Not a delegation to `amortisationSchedule`: a one-segment stepped
+    // schedule going through the same arithmetic as a many-segment one is
+    // what makes the agreement between the two builders worth asserting.
+    if (terms.type === 1) return amortisationSchedule(terms);
+  }
+  if (terms.type === 1 && steps.length > 0) {
+    throw new ScheduleError(
+      "a rate step and payments in advance do not combine: the payment " +
+        "starting the period is the new rate's, and the interest it settles " +
+        "accrued over the previous period at the old one",
+    );
+  }
+
+  const count = Math.trunc(terms.nper);
+  if (!Number.isFinite(terms.rate) || !Number.isFinite(terms.pv)) {
+    throw new ScheduleError("the loan terms must be finite numbers");
+  }
+  if (count < 1) {
+    throw new ScheduleError("a schedule needs at least one period");
+  }
+  if (count > MAX_SCHEDULE_PERIODS) {
+    throw new ScheduleError(
+      `a schedule of ${count} periods is above the limit of ${MAX_SCHEDULE_PERIODS}`,
+    );
+  }
+
+  const cuts = segmentTerm(count, terms.rate, steps);
+  const periods: SchedulePeriod[] = [];
+  const segments: RateSegment[] = [];
+  let entering = terms.pv;
+
+  for (const cut of cuts) {
+    // The stretch as a loan in its own right: what is owed entering it, at
+    // its rate, over everything left of the original term.
+    const remaining = count - cut.from + 1;
+    const sub: LoanTerms = {
+      rate: cut.rate,
+      nper: remaining,
+      pv: entering,
+      fv: terms.fv,
+      type: 0,
+    };
+    const payment = levelPayment(sub);
+    segments.push({
+      from: cut.from,
+      through: cut.through,
+      rate: cut.rate,
+      payment,
+    });
+
+    for (let local = 1; local <= cut.through - cut.from + 1; local++) {
+      const period = cut.from + local - 1;
+      const isLast = period === count;
+      const opening = -balanceAfter(sub, local - 1);
+      const interest = interestPart(sub, local);
+      let principal = principalPart(sub, local);
+      let closing = -balanceAfter(sub, local);
+
+      if (isLast) {
+        principal = unsignZero(-(opening + terms.fv));
+        closing = unsignZero(-terms.fv);
+      }
+
+      periods.push({
+        period,
+        opening: unsignZero(opening),
+        payment: unsignZero(isLast ? interest + principal : payment),
+        interest: unsignZero(interest),
+        principal,
+        closing,
+        rate: cut.rate,
+      });
+    }
+
+    entering = -balanceAfter(sub, cut.through - cut.from + 1);
+  }
+
+  const totalInterest = periods.reduce((sum, row) => sum + row.interest, 0);
+  const totalPrincipal = periods.reduce((sum, row) => sum + row.principal, 0);
+
+  return {
+    terms: { ...terms, nper: count },
+    payment: segments[0]!.payment,
+    periods,
+    totalInterest,
+    totalPrincipal,
+    segments,
+  };
 }
 
 const HEADERS = [
@@ -202,14 +402,20 @@ export function writeSchedule(
     entries[address] = input;
   };
 
-  HEADERS.forEach((header, column) => put(column, 0, `'${header}`));
+  // The rate goes in only when it moves. A column of one repeated number is
+  // the loan's heading rather than a column, and a schedule laid into a sheet
+  // whose rate does move cannot be audited without it.
+  const stepped = schedule.segments.length > 1;
+  const headers = stepped
+    ? [HEADERS[0], "Rate", ...HEADERS.slice(1)]
+    : [...HEADERS];
+
+  headers.forEach((header, column) => put(column, 0, `'${header}`));
   schedule.periods.forEach((row, index) => {
-    put(0, index + 1, row.period);
-    put(1, index + 1, row.opening);
-    put(2, index + 1, row.payment);
-    put(3, index + 1, row.interest);
-    put(4, index + 1, row.principal);
-    put(5, index + 1, row.closing);
+    const values = stepped
+      ? [row.period, row.rate, row.opening, row.payment, row.interest, row.principal, row.closing]
+      : [row.period, row.opening, row.payment, row.interest, row.principal, row.closing];
+    values.forEach((value, column) => put(column, index + 1, value));
   });
 
   book.setCells(entries);
