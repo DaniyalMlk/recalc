@@ -1617,9 +1617,14 @@ than a wait.
   Some spreadsheets render `=IF(TRUE,,2)` as `0`; here the result is a blank
   and is reported as one, since `ISBLANK` on it says TRUE and showing `0`
   would make the display disagree with that.
-- Only one sheet; there are no cross-sheet references.
-- Scenarios are not serialised: they live for the length of a session, and CSV
-  has nowhere to put them.
+- Only one sheet, so there are no cross-sheet references. A model that wants
+  its assumptions on one tab and its output on another has to lay both on the
+  same grid and keep them apart by hand, and a reference carrying a sheet name
+  does not parse: `=Sheet2!A1` stops at the `!`.
+- Scenarios are not serialised: they live for the length of a session. Nothing
+  the engine writes can carry them — CSV has nowhere to put a set of
+  overrides — so a sheet reopened from a file comes back with its scenarios
+  gone and they have to be defined again.
 - A fraction code cannot be combined with a decimal point or a scientific
   exponent in the same section; both are refused with an offset, in either
   order. There is no reading of `0.0 ?/?` that is not already a fraction.
@@ -1635,9 +1640,13 @@ than a wait.
   new rate re-amortised, while the interest it settles accrued over the period
   just gone at the old one, and which of the two the row should report is a
   question about the instrument rather than about arithmetic.
-- A rate step has to be written out. There is no reset off an index, and
-  nothing reads a rate curve.
+- A rate step has to be written out as a rate and a period. There is no reset
+  off an index and nothing reads a rate curve, so a loan whose rate follows a
+  published series has to have that series turned into steps first, and a
+  schedule cannot be re-run against a different curve.
 - Names can only be defined from the library or the shell, not from the grid.
+  There is no name box and no dialog, so a name is something a formula can use
+  and the interface cannot create.
 - Reference highlighting outlines only references written out in the formula.
   A name is underlined in the formula bar and resolved in the inspector, but
   the cells behind it are not outlined on the grid.
