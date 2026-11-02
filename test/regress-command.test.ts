@@ -258,10 +258,11 @@ describe("what the command prints", () => {
     });
     const out = run(book, "A1:A5 by B1:C5");
     expect(out).not.toContain("dependent");
-    // The dropped term is still listed, with the zero it contributes and
-    // nothing where a standard error, a t and a p would be.
-    expect(out).toMatch(/\n\s+C\s+0\s+n\/a\s+n\/a\s+n\/a/);
+    // The dropped term is still listed, with the zero it contributes, marked
+    // as dropped, and a dash where a standard error, a t and a p would be.
+    expect(out).toMatch(/\n\s+C \(dropped\)\s+0\s+—\s+—\s+—/);
     expect(out).toContain("columns that counted");
+    expect(out).toMatch(/fitted without\s+C/);
 
     const summary = summarise(
       book,

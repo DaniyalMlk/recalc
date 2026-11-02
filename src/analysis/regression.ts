@@ -97,6 +97,15 @@ export interface Term {
    * statistic alone leaves the reader to look that up.
    */
   readonly p: number;
+  /**
+   * Whether this term's column formed part of the basis.
+   *
+   * `false` for a column dropped as a linear combination of the others. Its
+   * coefficient is zero — which is what it contributes — and that zero is
+   * indistinguishable at a glance from a predictor measured to have no
+   * effect, which is the reason this flag exists rather than being inferred.
+   */
+  readonly counted: boolean;
 }
 
 export interface Summary {
@@ -129,6 +138,19 @@ export interface Summary {
   readonly rank: number;
   /** Whether an intercept was fitted, which the rank has to be read against. */
   readonly withIntercept: boolean;
+  /**
+   * Labels of the predictors that did not count, in the order they were given.
+   *
+   * Empty unless a column was dropped as dependent. *Which* of a dependent
+   * set appears here is settled by the order the columns were given in rather
+   * than by the data: they are visited left to right, so the earlier one
+   * wins, and two orderings of the same columns drop different ones and fit
+   * the same curve. So this names the column the fit did without, not the
+   * column that was redundant — there is no such thing, only a redundant set.
+   *
+   * Never the intercept, which is visited first and so always kept.
+   */
+  readonly dropped: readonly string[];
   /** The curve family that was fitted. */
   readonly model: RegressionModel;
   /**
@@ -263,6 +285,10 @@ export function summarise(
 
   const terms: Term[] = [];
   const offset = withIntercept ? 1 : 0;
+  // Which design columns formed the basis. The set is read per term rather
+  // than inferred from a zero coefficient, since a predictor can honestly
+  // measure zero.
+  const basis = new Set(fit.basis);
   if (withIntercept) {
     const se = sey * Math.sqrt(Math.max(fit.variance[0]!, 0));
     const t = se === 0 ? Number.NaN : fit.coefficients[0]! / se;
@@ -272,6 +298,7 @@ export function summarise(
       standardError: se,
       t,
       p: Number.isNaN(t) ? Number.NaN : twoTailedP(t, df),
+      counted: basis.has(0),
     });
   }
   for (let j = 0; j < k; j++) {
@@ -283,6 +310,7 @@ export function summarise(
       standardError: se,
       t,
       p: Number.isNaN(t) ? Number.NaN : twoTailedP(t, df),
+      counted: basis.has(offset + j),
     });
   }
 
@@ -346,6 +374,9 @@ export function summarise(
     significanceF: Number.isFinite(f) ? fSignificance(f, slopes, df) : 0,
     rank: fit.rank,
     withIntercept,
+    dropped: terms
+      .filter((term) => !term.counted && term.label !== "intercept")
+      .map((term) => term.label),
     model,
     fittedOn: logsOutcome(model) ? "ln y" : "y",
     rSquaredOnData,

@@ -639,3 +639,35 @@ tree green and the public API usable.
 - [x] `as <curve>` readable on either side of `through zero`, and an unknown
       curve name answered with the four it knows
 - [x] Fifteen ways of getting it wrong confirmed to fail
+
+## Phase 38 — Which column the fit did without
+
+- [x] The basis carried out of `leastSquares` rather than thrown away — it was
+      already computed, used to place the coefficients, and then reduced to
+      its own length as the rank
+- [x] Each term saying whether it counted, read from the basis rather than
+      inferred from a zero coefficient, since a predictor can honestly measure
+      zero
+- [x] The dropped columns named on the summary and under the statistics in
+      `.regress`, with the row marked and its standard error, t and p shown as
+      dashes rather than as figures
+- [x] A dropped column distinguished from one measured at exactly nothing,
+      with the second built rather than hoped for: a predictor orthogonal to
+      the intercept and to the other column, whose coefficient is a bitwise
+      zero while the column counted
+- [x] That pair found by breaking the gate — a version reading `counted` off a
+      non-zero coefficient passed the suite until the orthogonal case was
+      written
+- [x] The ordering claim asserted both ways round: the second of a dependent
+      pair goes whichever order they are written in, the coefficient kept
+      differs by exactly the factor between the columns, and the residual sum
+      of squares, the R-squared and the degrees of freedom are equal rather
+      than close
+- [x] The intercept confirmed never to be the column dropped, over four shapes
+      of dependence, which is what makes the line always name a predictor —
+      and the branch written for the other case removed as unreachable
+- [x] The dropped count asserted to agree with the shortfall in rank, so the
+      line cannot be printed with nothing on it
+- [x] `LINEST` left alone, its five-row block having nowhere to put this, and
+      the gap list line rewritten to say so
+- [x] Twelve ways of getting it wrong confirmed to fail

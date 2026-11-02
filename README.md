@@ -819,6 +819,29 @@ dependent pair survives. That is a choice and not an arithmetic fact: in a
 total and its two parts, each column is a combination of the other two, and
 making the order decide puts the choice with the person who wrote it.
 
+So the fit says which one it did without, rather than leaving a zero to be
+interpreted. `.regress` marks the row and names the column under the
+statistics:
+
+```
+         term  coefficient    std error           t         p
+    intercept    3.8839286   0.64985036   5.9766507  0.001879
+            B    1.7767857   0.33132099   5.3627322  0.003033
+  C (dropped)            0            —           —         —
+            D  0.026785714  0.035936807  0.74535599  0.489590
+
+  columns that counted           3
+        fitted without           C
+```
+
+The dashes are the point of the marking. A zero coefficient with a zero
+beside it would read as *measured, and exactly nothing*, which is a different
+claim and a perfectly possible one: a predictor orthogonal to the rest of the
+design has a coefficient of exactly zero and a standard error like any other
+column's. What a dropped column has is no standard error at all. An intercept
+is a column of ones and is visited first, so it is never the column dropped,
+which is why the line always names a predictor.
+
 **The degrees of freedom then have to come from the rank**, and this is the
 part that is easy to get wrong quietly. A dropped column costs no degree of
 freedom, and that number divides into every standard error, every t, the F
@@ -1581,11 +1604,10 @@ than a wait.
 - `SORT`, `SORTBY`, `FILTER` and `UNIQUE` work on whole lines and nothing
   narrower: there is no `SORT` of one column in place within a wider block, and
   no `FILTER` that keeps part of a row.
-- A dropped column is reported as a zero coefficient, which is what it
-  contributes, but nothing says *which* column went other than the zero
-  itself: there is no list of the columns a fit discarded, and `LINEST` has
-  nowhere in its five-row block to put one. The shell's `.regress` prints the
-  rank, which is as close as the surface gets.
+- `LINEST` does not say which column a rank-deficient fit discarded. Its
+  five-row block has nowhere to put one, and the block's shape is a
+  compatibility obligation rather than a choice, so the answer is only on the
+  summary and in the shell.
 - The curve families beyond a straight line are reachable from the shell and
   from the library, but only `LOGEST` and `GROWTH` have worksheet functions of
   their own. There is no `POWEST`, because there is no such function to be

@@ -595,12 +595,15 @@ function probability(value: number): string {
 
 function renderSummary(summary: Summary, ink: Ink): string {
   const header = ["term", "coefficient", "std error", "t", "p"];
+  // A dropped column's row carries a zero coefficient and nothing else, which
+  // reads as "measured, and exactly nothing" unless it is marked. The mark
+  // goes on the label, where a reader is already looking for the column.
   const rows = summary.terms.map((term) => [
-    term.label,
+    term.counted ? term.label : `${term.label} (dropped)`,
     short(term.coefficient),
-    short(term.standardError),
-    short(term.t),
-    probability(term.p),
+    term.counted ? short(term.standardError) : "—",
+    term.counted ? short(term.t) : "—",
+    term.counted ? probability(term.p) : "—",
   ]);
   const lines = grid([header, ...rows]);
   const [first, ...rest] = lines;
@@ -621,7 +624,17 @@ function renderSummary(summary: Summary, ink: Ink): string {
     ["observations", String(summary.observations)],
     ["predictors", String(summary.predictors)],
     ...(summary.rank < columns
-      ? [["columns that counted", String(summary.rank)] as [string, string]]
+      ? [
+          ["columns that counted", String(summary.rank)] as [string, string],
+          // Named, rather than left to be inferred from a zero. Which of a
+          // dependent set is dropped follows the order the columns were given
+          // in and not the data, so this says what the fit did without.
+          //
+          // Always a predictor: the columns are visited left to right, so the
+          // intercept is kept whenever one was asked for, and a rank below
+          // the column count means some predictor went.
+          ["fitted without", summary.dropped.join(", ")] as [string, string],
+        ]
       : []),
     ["degrees of freedom", String(summary.df)],
     ...(transformed
