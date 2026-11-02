@@ -101,14 +101,42 @@ describe("a summary with a dependent column in it", () => {
     const measured = summary.terms.find((term) => term.label === "B")!;
     expect(measured.coefficient).toBe(0);
     expect(measured.counted).toBe(true);
-    // It has statistics, which a dropped column does not.
+    // The discriminator is that it *has* a standard error, where a dropped
+    // column has none. The number happens to be zero as well, because this
+    // fit is exact and so every standard error in it is — which is why `NaN`
+    // against a number, and not a magnitude, is what the two differ by.
     expect(Number.isNaN(measured.standardError)).toBe(false);
-    expect(measured.standardError).toBeGreaterThan(0);
+    expect(measured.standardError).toBe(0);
+    expect(summary.ssResidual).toBe(0);
     expect(summary.rank).toBe(3);
     expect(summary.dropped).toEqual([]);
     const out = regressCommand(book, "A1:A8 by B1:C8");
     expect(out).not.toContain("(dropped)");
     expect(out).not.toContain("fitted without");
+  });
+
+  it("keeps the statistics of a column that merely fits badly", () => {
+    // The same shape with a residual in it, so the standard errors are real
+    // numbers. The coefficient is now a float hair from zero rather than
+    // zero — and the column still counted, still carries a standard error,
+    // and is still not named as dropped.
+    const alternating = [1, -1, 1, -1, 1, -1, 1, -1];
+    const symmetric = [1, 2, 3, 4, 4, 3, 2, 1];
+    const wobble = [1, 1, 0, 0, -1, -1, 0, 0];
+    const book = new Workbook();
+    symmetric.forEach((value, row) => {
+      book.setCell(`A${row + 1}`, 2 + 2 * value + wobble[row]!);
+      book.setCell(`B${row + 1}`, alternating[row]!);
+      book.setCell(`C${row + 1}`, value);
+    });
+    const summary = summarise(book, parseA1Range("A1:A8"), parseA1Range("B1:C8"));
+    const measured = summary.terms.find((term) => term.label === "B")!;
+    expect(Math.abs(measured.coefficient)).toBeLessThan(1e-14);
+    expect(measured.coefficient).not.toBe(0);
+    expect(measured.counted).toBe(true);
+    expect(measured.standardError).toBeGreaterThan(0);
+    expect(summary.ssResidual).toBeCloseTo(2.4, 12);
+    expect(summary.dropped).toEqual([]);
   });
 
   it("leaves a full-rank fit with nothing to report", () => {
