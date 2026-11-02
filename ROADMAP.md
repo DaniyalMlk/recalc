@@ -671,3 +671,35 @@ tree green and the public API usable.
 - [x] `LINEST` left alone, its five-row block having nowhere to put this, and
       the gap list line rewritten to say so
 - [x] Twelve ways of getting it wrong confirmed to fail
+
+## Phase 39 — The known-gaps list defends itself
+
+- [x] Every bullet of the README's gap list paired with a check that it is
+      still a gap, so closing one breaks the gate and the line has to come out
+      deliberately rather than be left behind
+- [x] Written because three lines were stale at once: one self-contradictory
+      about a dot in a date code, one true in only one of two orders, and one
+      saying the rank was as close as the surface got to naming a dropped
+      column
+- [x] Five failure modes — a bullet with no entry, an entry with no bullet,
+      the list growing or shrinking on both sides at once, a bullet reduced to
+      its lead, and a check that no longer holds
+- [x] Behavioural checks where a gap is a behaviour: the blank result, the
+      sheet-qualified reference the parser stops at, the fraction and point in
+      both orders, the step with payments in advance, the display-mode CSV
+      that does not read back, the typed date that stays text
+- [x] Name checks parsed rather than grepped, since the comments discuss
+      implicit intersection and column formats at the points where the engine
+      does without them and a grep would read those as the feature arriving
+- [x] Two of the first checks found too wide and narrowed: one matched
+      `isSingleValue`, the evaluator's test for the shape of a value, and one
+      matched `rateIndex`, an argument position in the bond functions
+- [x] The inventory asserted before any name check runs, since every "nothing
+      is named X" passes over an empty one, and a missing declaration proving
+      nothing rather than satisfying a check by its absence
+- [x] Four bullets rewritten after the gate found them thin, `Only one sheet`
+      among them, and the exemption list that would have spared them removed
+- [x] Ten ways of getting it wrong confirmed to fail, bar one: loosening the
+      pinned count alone changes nothing, because the pairing already catches
+      a one-sided edit — what the count catches is a line added to both places
+      at once, which is checked separately
