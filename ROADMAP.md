@@ -546,3 +546,27 @@ tree green and the public API usable.
       schedule where it has content
 - [x] The two principal columns found to be rotations of each other, pinned
       on the interior rows, since nothing in the code says so
+
+## Phase 35 — A dot means what its section says it means
+
+- [x] A `.` in a section laying out calendar fields read as a separator, so
+      `d.m.yyyy` renders `4.3.2026` instead of being refused for holding two
+      decimal points, and `d.m` prints its separator instead of dropping it
+- [x] Settled once the section has been read rather than when the character is
+      reached, which is the deferral the group separators already go through:
+      `0.0` and `d.m` have the same shape and only the section tells them apart
+- [x] No limit on how many a date section carries, and the sub-second reading
+      of `ss.00` untouched — including both in one section
+- [x] A numeric section still holding one point, refused at the offset of the
+      second, and a section mixing calendar fields with digit positions still
+      refused at the offset of the field
+- [x] The same order-dependence found and fixed at the fraction bar: the checks
+      sat where they could only see what preceded them, so `?/? 0.0` was
+      accepted and printed 3.75 as `15/4 00`, and `# ?/?.0` printed it as
+      `3 3/40` — a reading a reader cannot catch
+- [x] Both refusals now reported at the offset of whichever of the two was
+      written second, unchanged for the order that was already refused
+- [x] The dot form checked against the slash form rather than against typed
+      strings, over five shapes and eight dates, and the rendered fields
+      checked against what the serial module says the date is
+- [x] Ten ways of getting it wrong confirmed to fail

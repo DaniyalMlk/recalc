@@ -358,6 +358,20 @@ Whether a `/` starts a fraction depends on what surrounds it: digit positions
 on the left and a denominator on the right. A lone one is a separator, which is
 what keeps `d/m/yyyy` a date.
 
+A `.` is settled the same way, but by the section rather than by its
+neighbours — the section is the smallest thing that can answer it, since `0.0`
+and `d.m` have the same shape and different meanings. In a section laying out
+digits it is the decimal point, of which there is one; in a section laying out
+calendar fields it is a separator, of which there may be any number. The one
+exception is written right behind a seconds field, where `ss.00` asks for
+sub-second precision.
+
+```ts
+formatWith("d.m.yyyy", 46085).text;              // "4.3.2026"
+formatWith("yyyy.mm.dd", 46085).text;            // "2026.03.04"
+formatWith("d.m.yyyy hh:mm:ss.00", 46085.5).text; // "4.3.2026 12:00:00.00"
+```
+
 ### Date and time codes
 
 A section that contains a calendar field lays out a date instead of digits, and
@@ -1497,13 +1511,9 @@ than a wait.
 - Only one sheet; there are no cross-sheet references.
 - Scenarios are not serialised: they live for the length of a session, and CSV
   has nowhere to put them.
-- A `.` in a date section that is not behind a seconds field is dropped: a
-  `d.m.yyyy` code renders as `432026`, and a second one in the same section
-  is refused outright. Separators in a date code have to be written as
-  something else.
 - A fraction code cannot be combined with a decimal point or a scientific
-  exponent in the same section; both are refused with an offset. There is no
-  reading of `0.0 ?/?` that is not already a fraction.
+  exponent in the same section; both are refused with an offset, in either
+  order. There is no reading of `0.0 ?/?` that is not already a fraction.
 - A date is recognised by the format on its cell, not by what was typed: an
   entered `2026-03-04` is text until `DATEVALUE` turns it into a serial.
 - A format belongs to a cell, not to a row, a column or the sheet, so
