@@ -550,10 +550,11 @@ function renderSchedule(schedule: Schedule, ink: Ink): string {
   return [ink.ok(first ?? ""), ...rest, ink.dim(last)].join("\n");
 }
 
-export const REGRESS_USAGE = "usage: .regress B2:B12 by C2:F12 [through zero]";
+export const REGRESS_USAGE =
+  "usage: .regress B2:B12 by C2:F12 [as power] [through zero]";
 
 /**
- * `.regress <y> by <x> [through zero]`
+ * `.regress <y> by <x> [as <curve>] [through zero]`
  *
  * A fit, laid out the way a summary is read rather than the way `LINEST`
  * returns it: one line per term with its coefficient, standard error and t
@@ -569,7 +570,7 @@ export function regressCommand(
 
   try {
     return renderSummary(
-      summarise(book, parsed.y, parsed.x, parsed.withIntercept),
+      summarise(book, parsed.y, parsed.x, parsed.withIntercept, parsed.model),
       ink,
     );
   } catch (error) {
@@ -611,6 +612,11 @@ function renderSummary(summary: Summary, ink: Ink): string {
   // predictor count. A line on every fit would be one more thing to interpret;
   // a line here says a column did not count.
   const columns = summary.predictors + (summary.withIntercept ? 1 : 0);
+
+  // Every statistic here belongs to the fit in the space it was taken in, so
+  // a model fitted on a transform says which space that was, and labels its
+  // R-squared accordingly rather than leaving the reader to assume `y`.
+  const transformed = summary.fittedOn !== "y";
   const stats = grid([
     ["observations", String(summary.observations)],
     ["predictors", String(summary.predictors)],
@@ -618,14 +624,48 @@ function renderSummary(summary: Summary, ink: Ink): string {
       ? [["columns that counted", String(summary.rank)] as [string, string]]
       : []),
     ["degrees of freedom", String(summary.df)],
-    ["r squared", short(summary.rSquared)],
+    ...(transformed
+      ? [
+          ["fitted on", summary.fittedOn] as [string, string],
+          [`r squared (on ${summary.fittedOn})`, short(summary.rSquared)] as [string, string],
+          ["r squared (on the data)", short(summary.rSquaredOnData)] as [string, string],
+        ]
+      : [["r squared", short(summary.rSquared)] as [string, string]]),
     ["adjusted r squared", short(summary.adjustedRSquared)],
     ["standard error", short(summary.standardError)],
     ["f", short(summary.f)],
     ["significance f", probability(summary.significanceF)],
   ]).map((line) => ink.dim(line));
 
-  return [ink.ok(first ?? ""), ...rest, "", ...stats].join("\n");
+  return [
+    ink.ok(first ?? ""),
+    ...rest,
+    ...(summary.curve === null ? [] : ["", ink.ok(`  ${curveLine(summary)}`)]),
+    "",
+    ...stats,
+  ].join("\n");
+}
+
+/**
+ * The curve written out in its own parameters.
+ *
+ * The point of the line is that the number a reader wants is not the one in
+ * the table above it: the table carries the log-space intercept, and the
+ * curve's `b` is its exponential.
+ */
+function curveLine(summary: Summary): string {
+  const curve = summary.curve;
+  if (curve === null) return "";
+  const labels = summary.terms
+    .filter((term) => term.label !== "intercept")
+    .map((term) => term.label);
+  const parts = curve.factors.map((factor, index) => {
+    const name = labels[index] ?? `x${index + 1}`;
+    return summary.model === "power"
+      ? `${name}^${short(factor)}`
+      : `${short(factor)}^${name}`;
+  });
+  return `y = ${short(curve.scale)} · ${parts.join(" · ")}`;
 }
 
 /**

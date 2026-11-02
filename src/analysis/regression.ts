@@ -32,6 +32,54 @@ export class RegressionError extends Error {
   }
 }
 
+/**
+ * The curve families a summary can fit.
+ *
+ * Three of the four are a linear fit with a transform on the way in: the
+ * fitting routine never changes, only what it is handed. Which transform is
+ * applied is the whole of the difference between them.
+ *
+ * - `linear` — `y = b + m x`, fitted on `y`
+ * - `exponential` — `y = b m^x`, fitted on `ln y`
+ * - `power` — `y = b x^m`, fitted on `ln y` against `ln x`
+ * - `logarithmic` — `y = b + m ln x`, fitted on `y` against `ln x`
+ */
+export const REGRESSION_MODELS = [
+  "linear",
+  "exponential",
+  "power",
+  "logarithmic",
+] as const;
+
+export type RegressionModel = (typeof REGRESSION_MODELS)[number];
+
+/** Whether the model takes the log of the outcome before fitting. */
+function logsOutcome(model: RegressionModel): boolean {
+  return model === "exponential" || model === "power";
+}
+
+/** Whether the model takes the log of each predictor before fitting. */
+function logsPredictors(model: RegressionModel): boolean {
+  return model === "power" || model === "logarithmic";
+}
+
+/**
+ * `ln` of every value, refusing any that has no logarithm.
+ *
+ * Refused rather than dropped: dropping a row would answer a different
+ * question with nothing in the output to say it had.
+ */
+function logged(values: readonly number[], what: string): number[] {
+  return values.map((value) => {
+    if (!(value > 0)) {
+      throw new RegressionError(
+        `a ${what} fit needs every value above zero, and found ${value}`,
+      );
+    }
+    return Math.log(value);
+  });
+}
+
 /** One predictor's line in the summary. */
 export interface Term {
   /** `intercept`, or the address of the column the predictor came from. */
@@ -81,6 +129,45 @@ export interface Summary {
   readonly rank: number;
   /** Whether an intercept was fitted, which the rank has to be read against. */
   readonly withIntercept: boolean;
+  /** The curve family that was fitted. */
+  readonly model: RegressionModel;
+  /**
+   * What the least squares was taken over, which is not always `y`.
+   *
+   * Every statistic above — the standard errors, the t values, the F, and
+   * `rSquared` — belongs to the fit in *this* space. For a model that logs
+   * the outcome that is a fit on ratios, so a point predicted at half its
+   * value counts the same whether the value is 2 or 2,000,000.
+   */
+  readonly fittedOn: "y" | "ln y";
+  /**
+   * R-squared of the curve against the data as given.
+   *
+   * The same fit has two numbers called R-squared when the outcome was
+   * transformed, and spreadsheets report the one in the fitted space — which
+   * on a power or an exponential trendline is the log fit's, routinely quoted
+   * as though it described the curve against the data. This is the other one,
+   * computed from the curve's own predictions in `y`. It is left as it comes
+   * out, negative included: a curve can be worse than the mean, and clamping
+   * it to zero would hide exactly the case worth seeing.
+   *
+   * Equal to `rSquared` for a model fitted on `y`.
+   */
+  readonly rSquaredOnData: number;
+  /**
+   * The curve's parameters in its own form, for a model fitted on `ln y`.
+   *
+   * `scale` is the `b` of `y = b x^m` or `y = b m^x` — the exponential of the
+   * log-space intercept, not the intercept itself, which is the back-transform
+   * a reader is left to do by hand otherwise. `factors` are the exponents `m`
+   * of a power curve and the bases `m` of an exponential one, one per
+   * predictor. `null` for a model whose coefficients are already in the
+   * curve's form.
+   */
+  readonly curve: {
+    readonly scale: number;
+    readonly factors: readonly number[];
+  } | null;
 }
 
 function valuesOf(book: Workbook, range: RangeRef): number[][] {
@@ -122,13 +209,20 @@ export function summarise(
   yRange: RangeRef,
   xRange: RangeRef,
   withIntercept = true,
+  model: RegressionModel = "linear",
 ): Summary {
   const yBlock = valuesOf(book, yRange);
   if ((yBlock[0]?.length ?? 0) !== 1) {
     throw new RegressionError("the outcome has to be a single column");
   }
-  const y = yBlock.map((row) => row[0]!);
-  const x = valuesOf(book, xRange);
+  const observed = yBlock.map((row) => row[0]!);
+  const given = valuesOf(book, xRange);
+
+  // The transform, and the only thing that distinguishes the four families.
+  const y = logsOutcome(model) ? logged(observed, model) : observed;
+  const x = logsPredictors(model)
+    ? given.map((row) => logged(row, model))
+    : given;
   if (x.length !== y.length) {
     throw new RegressionError(
       `${formatRange(yRange)} has ${y.length} rows and ${formatRange(xRange)} has ${x.length}`,
@@ -205,6 +299,39 @@ export function summarise(
       ? Number.POSITIVE_INFINITY
       : ssRegression / slopes / (ssResidual / df);
 
+  // The curve's own parameters, and its R-squared against the data as given.
+  // Both are read off the same coefficients; what differs is that one of them
+  // undoes the transform first.
+  const intercept = withIntercept ? fit.coefficients[0]! : 0;
+  const slopeList = fit.coefficients.slice(offset, offset + k);
+  const curve = logsOutcome(model)
+    ? {
+        scale: Math.exp(intercept),
+        factors:
+          model === "power" ? [...slopeList] : slopeList.map((s) => Math.exp(s)),
+      }
+    : null;
+
+  let rSquaredOnData = rSquared;
+  if (logsOutcome(model)) {
+    const meanObserved =
+      observed.reduce((total, value) => total + value, 0) / n;
+    let residual = 0;
+    let total = 0;
+    for (let i = 0; i < n; i++) {
+      // The prediction in the fitted space, then undone -- the curve itself,
+      // which is what a reader plots and compares against the points.
+      let logPrediction = intercept;
+      for (let j = 0; j < k; j++) logPrediction += slopeList[j]! * x[i]![j]!;
+      const prediction = Math.exp(logPrediction);
+      residual += (observed[i]! - prediction) * (observed[i]! - prediction);
+      total += withIntercept
+        ? (observed[i]! - meanObserved) * (observed[i]! - meanObserved)
+        : observed[i]! * observed[i]!;
+    }
+    rSquaredOnData = total === 0 ? 1 : 1 - residual / total;
+  }
+
   return {
     terms,
     observations: n,
@@ -219,23 +346,50 @@ export function summarise(
     significanceF: Number.isFinite(f) ? fSignificance(f, slopes, df) : 0,
     rank: fit.rank,
     withIntercept,
+    model,
+    fittedOn: logsOutcome(model) ? "ln y" : "y",
+    rSquaredOnData,
+    curve,
   };
 }
 
 /** `<y> by <x>` — the shape the shell command takes. */
 export function parseRegressCommand(
   tail: string,
-): { y: RangeRef; x: RangeRef; withIntercept: boolean } | string {
-  const text = tail.trim();
+):
+  | {
+      y: RangeRef;
+      x: RangeRef;
+      withIntercept: boolean;
+      model: RegressionModel;
+    }
+  | string {
+  let text = tail.trim();
+
+  // `as <model>` is lifted out first so that it and `through zero` can be
+  // written in either order, as the amortise clauses can.
+  let model: RegressionModel = "linear";
+  const asMatch = /\s+as\s+(\S+)/i.exec(text);
+  if (asMatch !== null) {
+    const named = asMatch[1]!.toLowerCase();
+    const found = REGRESSION_MODELS.find((candidate) => candidate === named);
+    if (found === undefined) {
+      return `not a curve this fits: ${asMatch[1]} — ${REGRESSION_MODELS.join(", ")}`;
+    }
+    model = found;
+    text = (text.slice(0, asMatch.index) + text.slice(asMatch.index + asMatch[0].length)).trim();
+  }
+
   const match = /^(\S+)\s+by\s+(\S+)(\s+through\s+zero)?$/i.exec(text);
   if (match === null) {
-    return "usage: .regress B2:B12 by C2:F12 [through zero]";
+    return "usage: .regress B2:B12 by C2:F12 [as power] [through zero]";
   }
   try {
     return {
       y: parseA1Range(match[1]!),
       x: parseA1Range(match[2]!),
       withIntercept: match[3] === undefined,
+      model,
     };
   } catch {
     return "both arguments have to be blocks, like B2:B12";
