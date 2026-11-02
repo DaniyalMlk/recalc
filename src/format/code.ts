@@ -301,13 +301,19 @@ function parseSection(
   let grouped = false;
   let percents = 0;
   let seenPoint = false;
+  /** Where each `.` was written, to refuse the second one at its own offset. */
+  const pointsAt: number[] = [];
   let seenExponent = false;
+  /** Where the exponent was written, for the same reason as `pointsAt`. */
+  let exponentAt = -1;
   let hasText = false;
   let sawDateField = false;
   let firstDateFieldAt = -1;
   let clock12 = false;
   let subSecondDigits = 0;
   let fractionBarAt = -1;
+  /** Where the bar was written; `fractionBarAt` is a token index, not an offset. */
+  let fractionBarSourceAt = -1;
   let denominatorDigits = 0;
   let denominatorWidth = 0;
   let fixedDenominator: number | null = null;
@@ -345,9 +351,14 @@ function parseSection(
       }
 
       case ".": {
-        if (seenPoint) {
-          throw new FormatCodeError("a section has one decimal point", i);
-        }
+        // What a `.` means depends on the kind of section it is in, and that
+        // is not settled until the section has been read: in a numeric one it
+        // is the decimal point, of which there is at most one, and in a date
+        // one it is an ordinary separator, of which `d.m.yyyy` has two. So
+        // every point is emitted as a point and the ones that turn out to sit
+        // in a date section are converted to literals below -- the same
+        // deferral the group separators go through, for the same reason.
+        pointsAt.push(i);
         seenPoint = true;
         tokens.push({ kind: "point" });
         i += 1;
@@ -455,6 +466,7 @@ function parseSection(
         const sign = source[i + 1];
         if ((sign === "+" || sign === "-") && i + 1 < to) {
           seenExponent = true;
+          if (exponentAt < 0) exponentAt = i;
           tokens.push({ kind: "exponent", signAlways: sign === "+" });
           i += 2;
           break;
@@ -478,19 +490,12 @@ function parseSection(
         if (fractionBarAt >= 0) {
           throw new FormatCodeError("a section has one fraction bar", i);
         }
-        if (seenPoint) {
-          throw new FormatCodeError(
-            "a fraction code cannot also have a decimal point",
-            i,
-          );
-        }
-        if (seenExponent) {
-          throw new FormatCodeError(
-            "a fraction code cannot also be scientific",
-            i,
-          );
-        }
 
+        // Whether this section also carries a decimal point or an exponent is
+        // settled once it has been read, not here: a check written at the bar
+        // can only see what precedes it, which let `?/? 0.0` through while
+        // refusing `0.0 ?/?`.
+        fractionBarSourceAt = i;
         fractionBarAt = tokens.length;
         tokens.push({ kind: "literal", text: "/" });
 
@@ -599,6 +604,13 @@ function parseSection(
     tokenList.push(token);
   });
 
+  // A numeric section has one decimal point. A date section has none: every
+  // `.` in it is a separator, so the limit does not apply there and the
+  // points become literals instead.
+  if (!sawDateField && pointsAt.length > 1) {
+    throw new FormatCodeError("a section has one decimal point", pointsAt[1]!);
+  }
+
   if (sawDateField) {
     if (intDigits + decimals > 0 || hasText) {
       throw new FormatCodeError(
@@ -607,7 +619,11 @@ function parseSection(
       );
     }
     return {
-      tokens: resolveMinutes(tokenList),
+      tokens: resolveMinutes(
+        tokenList.map((token) =>
+          token.kind === "point" ? { kind: "literal" as const, text: "." } : token,
+        ),
+      ),
       colour,
       intDigits: 0,
       minIntDigits: 0,
@@ -626,6 +642,20 @@ function parseSection(
   }
 
   if (fractionBarAt >= 0) {
+    // Refused at the offset of whichever of the two was written second, which
+    // is the character that made the combination.
+    if (pointsAt.length > 0) {
+      throw new FormatCodeError(
+        "a fraction code cannot also have a decimal point",
+        Math.max(fractionBarSourceAt, pointsAt[0]!),
+      );
+    }
+    if (seenExponent) {
+      throw new FormatCodeError(
+        "a fraction code cannot also be scientific",
+        Math.max(fractionBarSourceAt, exponentAt),
+      );
+    }
     if (hasText) {
       throw new FormatCodeError(
         "a fraction code cannot also carry a text placeholder",
