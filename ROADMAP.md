@@ -608,3 +608,34 @@ tree green and the public API usable.
 - [x] An evidence row pairing the agreement with the divergence, so a builder
       that ignored which rate came first would fail it
 - [x] Fourteen ways of getting it wrong confirmed to fail
+
+## Phase 37 — A power curve, and what a transformed fit reports
+
+- [x] `power`, `logarithmic` and `exponential` beside `linear`, so the four
+      classic curve families are all reachable — one transform parameter
+      rather than four fitting routines, since the least squares never changes
+- [x] An exact power law recovered in both parameters to twelve places, and a
+      product of two powers in all three
+- [x] The fit checked against another module, `SLOPE` and `INTERCEPT` over
+      `LN` of the same two columns, which a transform applied to the wrong
+      side does not survive
+- [x] Coefficients returned in the curve's own form: the `b` of `y = b x^m`
+      rather than the `ln b` the table carries, and the exponents of a power
+      curve distinguished from the bases of an exponential
+- [x] A scale of exactly one, not nearly one, when the fit is sent through
+      zero — no intercept in log space is `ln b = 0`
+- [x] Both R-squareds reported, each labelled with the space it belongs to,
+      since every statistic in the table belongs to the fit in that space
+- [x] The two pulled apart on a power law with one point at 45% of where it
+      belongs: 0.994928 on `ln y` against 0.588149 on the data, which is the
+      figure a trendline prints against the figure describing the curve
+- [x] The figure on the data left negative rather than clamped, because a
+      curve can be worse than the mean and that is the case worth seeing
+- [x] The log-log fit shown not to be the least-squares curve in `y`: a
+      coordinate search on a halving step, started from the log-log answer,
+      finds a residual 10.8% smaller, with both bounds asserted
+- [x] Every value with no logarithm refused and named, on whichever side the
+      model takes a log of, rather than dropped
+- [x] `as <curve>` readable on either side of `through zero`, and an unknown
+      curve name answered with the four it knows
+- [x] Fifteen ways of getting it wrong confirmed to fail

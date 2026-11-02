@@ -891,6 +891,52 @@ Adjusted R-squared sits beside the raw one because the raw one can only go up
 as columns are added, and on its own says nothing about whether the column was
 worth including.
 
+`as power`, `as exponential` and `as logarithmic` fit the other three classic
+curve families. All three are this same linear fit with a transform on the way
+in — `y = b x^m` is a log on both sides, `y = b m^x` a log on the outcome,
+`y = b + m ln x` a log on the predictors — so the fitting routine never
+changes, only what it is handed:
+
+```
+recalc> .regress A1:A10 by B1:B10 as power
+       term  coefficient    std error          t         p
+  intercept    1.2147589   0.13424542  9.0487919   1.78e-5
+          B    1.4371635  0.036278689  39.614537  1.81e-10
+
+  y = 3.3694815 · B^1.4371635
+
+             observations          10
+               predictors           1
+       degrees of freedom           8
+                fitted on        ln y
+      r squared (on ln y)  0.99492808
+  r squared (on the data)  0.58814926
+       adjusted r squared  0.99429409
+           standard error  0.22840416
+                        f   1569.3116
+           significance f    1.81e-10
+```
+
+Two lines there are the point of the feature. The curve line writes the fit
+out in its own parameters, because the table's intercept is `ln b` and not the
+`b` of `y = b x^m` — a reader taking 1.21 for the scale is out by a factor of
+e to it. And a fit on a transform has **two** numbers called R-squared. Every
+statistic in the table belongs to the fit in the space it was taken in, so
+`r squared (on ln y)` is the log fit's, and it is the one a spreadsheet prints
+beside a power trendline. The data above is a clean power law with one point
+at 45% of where it belongs: 0.995 in log space, 0.588 against the data. A
+reader quoting the first for how well the curve describes the points is out by
+far more than rounding.
+
+The figure on the data is left as it comes out, negative included. A curve can
+be worse than a flat line through the mean, and clamping that to zero would
+hide exactly the case worth seeing. A linear or logarithmic fit takes no log of
+the outcome, so the two coincide and only one is printed.
+
+Every value with no logarithm is refused and named, on whichever side the model
+takes a log of — an exponential will take a negative predictor, a logarithmic
+fit a negative outcome, and a power curve neither.
+
 The p column is the same reasoning applied to each term. A t of 4.28 is
 significant at the 1% level on six degrees of freedom and is not on two, and a
 statistic that has to be looked up in a table is half an answer. The
@@ -1256,7 +1302,7 @@ what-if `.goalseek B6 = 0 by B1 [apply]` and
 `.table B6 by B1 = 20..40/5 [x B2 = 500..2000/4] [into D1]`; for scenarios
 `.scenario Base = B1:B3`, `.scenario Down = B1=25`, `.scenarios`,
 `.apply Down`, `.unscenario Down`, `.summary B6:B8`; for a fit
-`.regress E1:E11 by A1:D11 [through zero]`; for a comparison
+`.regress E1:E11 by A1:D11 [as power] [through zero]`; for a comparison
 `.ttest A1:A9 vs B1:B9 [paired|pooled|welch] [one-tailed]`; and for CSV
 `.csv [formulas|display]`, `.import data.csv [A1]`,
 `.export out.csv [formulas|display]`.
@@ -1540,9 +1586,11 @@ than a wait.
   itself: there is no list of the columns a fit discarded, and `LINEST` has
   nowhere in its five-row block to put one. The shell's `.regress` prints the
   rank, which is as close as the surface gets.
-- `LOGEST` and `GROWTH` are the only non-linear fits. A power curve
-  (`y = b · x^m`, which is a log on both sides rather than one) has no
-  function of its own.
+- The curve families beyond a straight line are reachable from the shell and
+  from the library, but only `LOGEST` and `GROWTH` have worksheet functions of
+  their own. There is no `POWEST`, because there is no such function to be
+  compatible with: a power curve on the grid is `LINEST` over `LN` of both
+  columns.
 - A formula whose result is a blank shows as empty rather than as a zero.
   Some spreadsheets render `=IF(TRUE,,2)` as `0`; here the result is a blank
   and is reported as one, since `ISBLANK` on it says TRUE and showing `0`
