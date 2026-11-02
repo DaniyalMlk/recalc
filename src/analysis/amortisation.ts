@@ -402,14 +402,20 @@ export function writeSchedule(
     entries[address] = input;
   };
 
-  HEADERS.forEach((header, column) => put(column, 0, `'${header}`));
+  // The rate goes in only when it moves. A column of one repeated number is
+  // the loan's heading rather than a column, and a schedule laid into a sheet
+  // whose rate does move cannot be audited without it.
+  const stepped = schedule.segments.length > 1;
+  const headers = stepped
+    ? [HEADERS[0], "Rate", ...HEADERS.slice(1)]
+    : [...HEADERS];
+
+  headers.forEach((header, column) => put(column, 0, `'${header}`));
   schedule.periods.forEach((row, index) => {
-    put(0, index + 1, row.period);
-    put(1, index + 1, row.opening);
-    put(2, index + 1, row.payment);
-    put(3, index + 1, row.interest);
-    put(4, index + 1, row.principal);
-    put(5, index + 1, row.closing);
+    const values = stepped
+      ? [row.period, row.rate, row.opening, row.payment, row.interest, row.principal, row.closing]
+      : [row.period, row.opening, row.payment, row.interest, row.principal, row.closing];
+    values.forEach((value, column) => put(column, index + 1, value));
   });
 
   book.setCells(entries);
