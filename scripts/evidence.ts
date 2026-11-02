@@ -26,6 +26,11 @@ import { Workbook } from "../src/engine/workbook.js";
 import { serialFromCivil } from "../src/date/serial.js";
 import { yearFraction } from "../src/date/daycount.js";
 import { accruedYears } from "../src/functions/bonds.js";
+import {
+  amortisationSchedule,
+  steppedSchedule,
+} from "../src/analysis/amortisation.js";
+import type { LoanTerms } from "../src/functions/amortisation.js";
 import { COUPON_REFERENCE } from "./coupon-reference.js";
 
 export interface Check {
@@ -452,6 +457,66 @@ function accrualTelescopes(): Check {
   };
 }
 
+/**
+ * A stepped schedule against the single-rate builder, and against itself with
+ * the two rates the other way round.
+ *
+ * The agreement is the check that the segment arithmetic is the same
+ * arithmetic: steps that all name the rate the loan already had must produce
+ * the schedule the single-rate builder does, and only the boundaries chain,
+ * so what is left is float residue. The divergence is what makes the
+ * agreement worth asserting — a builder that ignored which rate came first
+ * would pass the first half and fail the second.
+ */
+function steppedScheduleAgrees(): Check {
+  const terms: LoanTerms = {
+    rate: 0.055 / 12,
+    nper: 360,
+    pv: 200_000,
+    fv: 0,
+    type: 0,
+  };
+  const flat = amortisationSchedule(terms);
+  const restated = steppedSchedule(
+    terms,
+    [60, 120, 180, 240, 300].map((from) => ({ from, rate: terms.rate })),
+  );
+  let worst = 0;
+  for (let i = 0; i < flat.periods.length; i++) {
+    for (const column of ["opening", "payment", "interest", "principal", "closing"] as const) {
+      worst = Math.max(
+        worst,
+        Math.abs(restated.periods[i]![column] - flat.periods[i]![column]) / terms.pv,
+      );
+    }
+  }
+
+  const high = 0.07 / 12;
+  const up = steppedSchedule(terms, [{ from: 181, rate: high }]);
+  const down = steppedSchedule({ ...terms, rate: high }, [
+    { from: 181, rate: terms.rate },
+  ]);
+  const order =
+    (Math.abs(down.totalInterest) - Math.abs(up.totalInterest)) /
+    Math.abs(up.totalInterest);
+
+  const ok = worst < 1e-14 && order > 0.1;
+  return {
+    label:
+      "A schedule whose steps name the rate it already had, against the " +
+      "single-rate builder over 360 rows and five resets",
+    result:
+      "below 1e-14 of the principal — and 12% apart when the same two rates " +
+      "come in the other order, which is why the agreement is a check",
+    ok,
+    ...(ok
+      ? {}
+      : {
+          complaint: `residue ${worst} against 1e-14; order spread ${order} against 0.1`,
+        }),
+  };
+}
+
 /** Every row of the evidence table, in the order the README prints them. */
 export function measure(): readonly Check[] {
   return [
@@ -463,6 +528,7 @@ export function measure(): readonly Check[] {
     amortisationCloses(),
     inverseRoundTrip(),
     scheduleMatchesReference(),
+    steppedScheduleAgrees(),
     accrualTelescopes(),
   ];
 }

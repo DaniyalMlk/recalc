@@ -50,6 +50,7 @@ which runs in CI and exits non-zero if any of them moves:
 | A 360-month loan of 200,000 paid off at the instalment `PMT` returns | below 1e-6, of the 200,000 it started at, after every payment — a relative residue under 1e-13 |
 | `MINVERSE(A)` multiplied back by `A`, against the identity matrix | below 1e-14, in every entry |
 | `COUPPCD` and `COUPNCD` against a published transcript of a reference spreadsheet, over month ends and the days either side of them | exact agreement on all 24 cases — 4 month ends under the end-of-month rule and 20 neighbours that must stay off it |
+| A schedule whose steps name the rate it already had, against the single-rate builder over 360 rows and five resets | below 1e-14 of the principal — and 12% apart when the same two rates come in the other order, which is why the agreement is a check |
 | The accrual `ACCRINT` sums over quasi-coupon periods against `YEARFRAC` over the same span, on the three bases where the two must agree | below 1e-15 over 6,540 cases — and past 2% on the two bases where they must not, which is why the agreement is a check |
 
 **The cost rows are counts, not durations.** Milliseconds are a statement about
@@ -468,6 +469,44 @@ final payment absorbs whatever residue is left, so the closing balance is
 exactly `0` (or exactly the balloon) rather than a float a hair away from it —
 which is also what a lender does, since the last instalment on a real loan is a
 different number from the other 359.
+
+A loan whose rate changes partway is a schedule too — a teaser rate, a fixed
+period rolling onto a floating one, a step-up. Each `then` says what the rate
+becomes and the period it becomes it from:
+
+```
+> .amortise 200000 at 5.5%/12 over 360 then 7% from 181
+      period     rate    opening     payment    interest   principal    closing
+           1  0.4583%     200000   -1135.578  -916.66667  -218.91134  199781.09
+           2  0.4583%  199781.09   -1135.578  -915.66332  -219.91468  199561.17
+  … 348 more
+         359  0.5833%   2476.681  -1249.1865  -14.447306  -1234.7392  1241.9418
+         360  0.5833%  1241.9418  -1249.1865  -7.2446607  -1241.9418          0
+       total                      -429257.61  -229257.61     -200000
+```
+
+A reset written without a divisor inherits the loan's, since a term sheet
+quoting 5.5%/12 goes on to say 7% and means 7%/12 by it. The rate column
+appears only once there is more than one rate to put in it.
+
+The payment moves and the term does not: at each step what is left is
+re-amortised over the periods remaining to the original maturity, which is
+what a lender does to keep the loan retiring on its maturity date. Between two
+steps the rate is level, so that stretch is an ordinary annuity and its rows
+are computed from the closed form exactly as a single-rate schedule's are.
+Only the boundaries chain, so the residue is bounded by the number of resets
+rather than the number of periods — measured at 9.5e-16 of the principal over
+five of them.
+
+Two things about a stepped loan are worth knowing before reading one. Half the
+term at each of two rates is *not* the average of the two flat loans: the loan
+above pays 229,258 of interest where the average of 5.5% and 7% flat is
+243,913, 6.0% less. And the same two rates the other way round — 7% first,
+5.5% from period 181 — costs 257,235, which is 27,978 *more* for the same two
+rates over the same two halves. Low first is cheaper, because the low rate is
+charged while the balance is still large. The high-rate-first loan has the
+larger payment and still amortises more slowly, since more of each payment is
+interest.
 
 Payments in advance are a schedule too, read in the order the payment actually
 happens:
@@ -1521,8 +1560,13 @@ than a wait.
   cells in it.
 - CSV carries no formats: an export in `display` mode writes what the sheet
   shows, but that text does not read back in as the same numbers.
-- A schedule assumes a single rate for the whole term: there is no step-up, no
-  reset off an index, and no way to tabulate a loan whose rate changes partway.
+- A rate step and payments in advance do not combine, and a schedule asking
+  for both is refused. The payment at the start of the period is the one the
+  new rate re-amortised, while the interest it settles accrued over the period
+  just gone at the old one, and which of the two the row should report is a
+  question about the instrument rather than about arithmetic.
+- A rate step has to be written out. There is no reset off an index, and
+  nothing reads a rate curve.
 - Names can only be defined from the library or the shell, not from the grid.
 - Reference highlighting outlines only references written out in the formula.
   A name is underlined in the formula bar and resolved in the inspector, but
