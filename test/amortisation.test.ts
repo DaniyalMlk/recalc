@@ -279,6 +279,7 @@ describe("the .amortise command", () => {
       balloon: 0,
       type: 0,
       into: undefined,
+      steps: [],
     });
     expect(parseAmortiseCommand("50000 at 0.05 over 10")).toMatchObject({
       rate: 0.05,
