@@ -39,12 +39,21 @@ describe("compiling a sub-second code", () => {
     expect(() => parseFormatCode("hh:mm.00")).toThrow(FormatCodeError);
     expect(() => parseFormatCode("hh:mm:ss .00")).toThrow(FormatCodeError);
     // A point with nothing behind it is not precision either, and is left
-    // for the main loop rather than eaten here -- which is what keeps a
-    // second point in the same section refused instead of quietly accepted.
+    // for the main loop rather than eaten here -- where, in a date section,
+    // it becomes an ordinary separator.
     expect(digits("hh:mm:ss.")).toBe(0);
     expect(digits("hh:mm:ss.mm")).toBe(0);
-    expect(() => parseFormatCode("ss..00")).toThrow(/one decimal point/);
-    expect(() => parseFormatCode("hh:mm:ss.d.m")).toThrow(/one decimal point/);
+    // Two points behind a seconds field: the first is read as precision only
+    // if digits follow it, and here the second point does, so neither is.
+    // What is left is a date section with digit positions in it, which is
+    // refused for that reason rather than for having two points.
+    expect(() => parseFormatCode("ss..00")).toThrow(
+      /mixes date fields with digit positions/,
+    );
+    // A separator that is not behind a seconds field is a literal, however
+    // many of them there are: this one is a clock followed by day and month.
+    expect(digits("hh:mm:ss.d.m")).toBe(0);
+    expect(formatWith("hh:mm:ss.d.m", 46085.5).text).toBe("12:00:00.4.3");
   });
 
   it("refuses more digits than a serial can carry", () => {
