@@ -385,6 +385,24 @@ export interface Fit {
   readonly variance: number[];
   /** Columns that formed the basis; `coefficients.length` minus this were dropped. */
   readonly rank: number;
+  /**
+   * Which columns formed the basis, by index into the design, ascending.
+   *
+   * The rank says how many columns counted and this says which, which a
+   * reader cannot otherwise recover: a dropped column's zero coefficient
+   * looks exactly like a predictor measured to have no effect.
+   *
+   * *Which* column of a dependent set lands here is a property of the order
+   * they were handed in and not of the data. Columns are visited left to
+   * right and kept when what is left of them is more than the tolerance, so
+   * the earlier column of a dependent pair always wins. Two orderings of the
+   * same columns therefore keep different ones and fit the same curve, since
+   * the fitted values depend on the column space and not on how it is
+   * spanned. The first column is always kept unless it is itself negligible,
+   * which is why an intercept — a column of ones, visited first — never
+   * drops.
+   */
+  readonly basis: readonly number[];
 }
 
 /**
@@ -440,5 +458,12 @@ export function leastSquares(design: Rows, y: readonly number[]): Fit | null {
     variance[column] = sum;
   }
 
-  return { coefficients, residuals, ssResidual, variance, rank: kept.length };
+  return {
+    coefficients,
+    residuals,
+    ssResidual,
+    variance,
+    rank: kept.length,
+    basis: [...kept],
+  };
 }
