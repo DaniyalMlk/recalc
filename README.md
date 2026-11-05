@@ -1217,6 +1217,78 @@ setting whatever landed at `B7` afterwards. `ScenarioSet.adjust` moves them by
 the same rule the formulas and names move by, and the shell calls it on every
 structural edit.
 
+## Saving a model
+
+CSV carries the *values* of one rectangle. Everything that makes a sheet a
+model rather than a table — the formulas, the number formats, the names and the
+scenarios — is lost by a round trip through it. So a document is JSON holding
+**inputs**, and it reads back as the same sheet:
+
+```
+recalc> .demo
+recalc> .format B6:B8 = #,##0.00
+recalc> .name Rate = B1
+recalc> .scenario Base = B1:B3
+recalc> .scenario Down = B1=0.14
+recalc> .save model.json
+  29 cells, 3 formats, 1 name, 2 scenarios to model.json
+recalc> .reset
+  new sheet
+recalc> .open model.json
+  29 cells, 3 formats, 1 name, 2 scenarios from model.json
+recalc> B6
+  B6  60,708.38   =B3+NPV(B1,C3:F3)   [#,##0.00]
+recalc> .summary B6:B8
+           current        Base        Down
+  B6     60708.383   60708.383   25174.424
+  B7 =  0.18188125  0.18188125  0.18188125
+  B8     1.2428335   1.2428335   1.1006977
+  rows marked = are the same under every scenario
+```
+
+The scenario came back with the sheet it was captured over, which is what a
+document is for: `Down` raises the discount rate and the summary reads over the
+reopened model. `B7` is the internal rate of return and does not depend on the
+discount rate at all, which is why it is marked as unmoved.
+
+Every count is reported, including the ones at zero, because the thing worth
+knowing when a file opens is whether the formats and the scenarios came with
+it.
+
+From the library it is two functions:
+
+```ts
+import { ScenarioSet, Workbook, readDocument, writeDocument } from "recalc-formula";
+
+const text = writeDocument(book, scenarios);
+const { book: reopened, scenarios: theirs } = readDocument(text);
+```
+
+Four things besides the cells are carried, and each for a reason it cannot be
+inferred on the way back in. **Formats** belong to cells rather than to
+contents, so they sit on empty cells and cannot be read off any value.
+**Names** come in two kinds that cannot share a representation: a name bound to
+a cell or a range keeps the text it was defined with, while a name bound to a
+value cannot, because its display target is `String(value)` and that cannot
+tell `true` from `"true"` and renders an error as `[object Object]`.
+**Scenarios** are the point. And the **version** is there so that a reader
+meeting a document from a later writer refuses it rather than handing back a
+sheet quietly missing whatever the new version added.
+
+Spilled cells are not written. A spilled block is a consequence of its anchor's
+formula, so writing the filled cells as cells of their own would read back as a
+sheet of literals with a spill underneath them.
+
+A document is laid out for a diff — keys in a fixed order, cells sorted by
+position — because a model kept in a repository is read by people and merged by
+tools, and a format whose byte order depends on the order the cells were typed
+in is no use to either. The same sheet always writes the same bytes.
+
+`.open` replaces the sheet rather than reading into it, and the scenarios go
+with it. Merging a document into the sheet already open would leave the
+previous model's cells wherever the new one has nothing, which is not a file
+having been opened.
+
 ## Using it from the browser
 
 ```bash
@@ -1621,10 +1693,10 @@ than a wait.
   its assumptions on one tab and its output on another has to lay both on the
   same grid and keep them apart by hand, and a reference carrying a sheet name
   does not parse: `=Sheet2!A1` stops at the `!`.
-- Scenarios are not serialised: they live for the length of a session. Nothing
-  the engine writes can carry them — CSV has nowhere to put a set of
-  overrides — so a sheet reopened from a file comes back with its scenarios
-  gone and they have to be defined again.
+- A document carries a model but not a session: the undo history and the
+  clipboard are not in it, and the browser interface cannot write or read one.
+  `.save` and `.open` are the shell and the library, so a model built in the
+  browser is still a tab that cannot be put anywhere.
 - A fraction code cannot be combined with a decimal point or a scientific
   exponent in the same section; both are refused with an offset, in either
   order. There is no reading of `0.0 ?/?` that is not already a fraction.

@@ -753,3 +753,35 @@ tree green and the public API usable.
 - [x] The default window proved unchanged, including the two bisection budget
       thresholds of 26 and 49 halvings
 - [x] Eight ways of getting it wrong confirmed to fail
+
+## Phase 42 — A document format, so a model can be put somewhere
+
+- [x] JSON holding inputs rather than values, so the formulas survive a round
+      trip where CSV left only the values of one rectangle
+- [x] Formats carried separately, because they belong to cells rather than to
+      contents and sit on empty ones
+- [x] Both kinds of name carried apart, a reference name keeping the text it
+      was defined with and a value name its value, since a value name's
+      display target is `String(value)` and cannot tell `true` from `"true"`
+      or render an error as anything but `[object Object]`
+- [x] Scenarios carried, which is the gap the README named
+- [x] A version, and a refusal rather than a half-read sheet when it is one the
+      reader does not know
+- [x] Spilled cells not written, so a block comes back as a consequence of its
+      anchor and not as literals with a spill underneath them
+- [x] Keys in a fixed order and cells sorted by position, so the same sheet
+      always writes the same bytes however it was typed
+- [x] Every malformed field refused by name and position, with the shapes that
+      are values asserted to be accepted so the refusals cannot be too eager
+- [x] A hundred generated sheets round-tripped, the generator asserting it
+      generated formulas at all
+- [x] `.save` and `.open` at the prompt, `.open` replacing the session rather
+      than reading into it, and `.reset` becoming the same operation with
+      nothing to put there
+- [x] The opened sheet's history starting at the document, so undo cannot walk
+      back through the act of opening a file
+- [x] The gaps gate found to have let a name search stand in for a behaviour —
+      the serialisation check looked for a member of `ScenarioSet` and the
+      feature arrived as a module — and its rule narrowed accordingly
+- [x] A browser-source search for the word `document` found matching
+      `document.createElement` six times, and anchored to the module's exports

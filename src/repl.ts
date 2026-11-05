@@ -34,6 +34,8 @@ import {
 import { ScenarioSet } from "./analysis/scenarios.js";
 import type { Ink } from "./analysis/commands.js";
 import { exportCsv, importCsv } from "./io/csv.js";
+import { DocumentError, readDocument, writeDocument } from "./io/document.js";
+import type { Model } from "./io/document.js";
 
 // Written as an escape sequence so the source stays plain text.
 const ESC = "\u001b[";
@@ -148,6 +150,11 @@ export const HELP = `
     .import data.csv [A1]   read a CSV file into the sheet
     .export out.csv [formulas|display]
                             write the sheet to a CSV file
+
+  ${paint(BOLD, "Documents")}
+    .save model.json        write the whole model: cells, formats,
+                            names and scenarios
+    .open model.json        read one back, replacing the sheet
 `;
 
 /** How the what-if commands colour their output at this prompt. */
@@ -289,10 +296,11 @@ export class ReplSession {
     return handle(
       line,
       this.book,
-      () => {
-        this.book = new Workbook();
+      (model) => {
+        this.book = model === null ? new Workbook() : model.book;
         this.clipboard = null;
-        this.scenarios = new ScenarioSet();
+        this.scenarios =
+          model === null ? new ScenarioSet() : model.scenarios;
       },
       this.files,
       {
@@ -401,6 +409,25 @@ function blockLabel(range: { start: CellRef; end: CellRef }): string {
     : formatRange(range);
 }
 
+/**
+ * What a document amounts to, in one line.
+ *
+ * Every part is counted, including the ones at zero, because the useful thing
+ * to know on opening a file is whether the formats and the scenarios came with
+ * it, and a line that leaves out whatever happens to be empty cannot answer
+ * that.
+ */
+function describeModel(book: Workbook, scenarios: ScenarioSet | null): string {
+  const plural = (count: number, noun: string): string =>
+    `${count} ${noun}${count === 1 ? "" : "s"}`;
+  return [
+    plural(book.cellCount, "cell"),
+    plural(book.formatCount, "format"),
+    plural(book.names().length, "name"),
+    plural(scenarios?.size ?? 0, "scenario"),
+  ].join(", ");
+}
+
 /** Which of the three export modes a command tail asks for. */
 function exportMode(tail: string): "values" | "formulas" | "display" {
   const word = tail.trim().toLowerCase();
@@ -426,7 +453,16 @@ function splitArgs(tail: string): (string | undefined)[] {
 function handle(
   line: string,
   book: Workbook,
-  reset: () => void,
+  /**
+   * Put a different sheet in front of the session: a document that has just
+   * been read, or `null` for an empty one.
+   *
+   * `.reset` and `.open` are the same operation seen twice — the session's
+   * sheet, scenarios and clipboard are all replaced together — and keeping
+   * them one callback is what stops `.open` leaving the previous sheet's
+   * scenarios sitting over the new one.
+   */
+  replace: (model: Model | null) => void,
   files: FileAccess | null = null,
   clipboard: ClipboardSlot | null = null,
   scenarios: ScenarioSet | null = null,
@@ -446,7 +482,7 @@ function handle(
   }
 
   if (line === ".reset") {
-    reset();
+    replace(null);
     return "  new sheet";
   }
 
@@ -757,6 +793,40 @@ function handle(
     const text = exportCsv(book, { mode: exportMode(mode ?? "") });
     files.write(path, text);
     return `  ${book.cellCount} cell(s) to ${path}`;
+  }
+
+  if (line === ".save" || line.startsWith(".save ")) {
+    if (files === null) return paint(RED, "  no file access in this session");
+    const [path] = splitArgs(line.slice(5));
+    if (path === undefined) return paint(RED, "  usage: .save model.json");
+    let text: string;
+    try {
+      text = writeDocument(book, scenarios ?? undefined);
+    } catch (error) {
+      if (error instanceof DocumentError) return paint(RED, `  ${error.message}`);
+      throw error;
+    }
+    files.write(path, text);
+    return `  ${describeModel(book, scenarios)} to ${path}`;
+  }
+
+  if (line === ".open" || line.startsWith(".open ")) {
+    if (files === null) return paint(RED, "  no file access in this session");
+    const [path] = splitArgs(line.slice(5));
+    if (path === undefined) return paint(RED, "  usage: .open model.json");
+    let model: Model;
+    try {
+      model = readDocument(files.read(path));
+    } catch (error) {
+      if (error instanceof DocumentError) return paint(RED, `  ${error.message}`);
+      throw error;
+    }
+    // Replacing rather than merging: a document is a whole sheet, and reading
+    // one into the sheet already open would leave the previous model's cells
+    // wherever the new one has nothing, which is not a file having been
+    // opened. The scenarios go with it for the same reason.
+    replace(model);
+    return `  ${describeModel(model.book, model.scenarios)} from ${path}`;
   }
 
   if (line.startsWith(".")) {

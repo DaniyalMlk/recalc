@@ -8,6 +8,7 @@ import { parseFormatCode } from "../src/format/code.js";
 import { steppedSchedule } from "../src/analysis/amortisation.js";
 import { registeredFunctionNames } from "../src/functions/index.js";
 import { exportCsv, importCsv } from "../src/io/csv.js";
+import { readDocument, writeDocument } from "../src/io/document.js";
 
 /**
  * The README's known gaps, and whether each one is still a gap.
@@ -37,10 +38,22 @@ import { exportCsv, importCsv } from "../src/io/csv.js";
  * Where a gap is a *behaviour*, the check runs the engine, which is as sharp
  * as a check can be: `=IF(TRUE,,2)` either displays as empty or it does not.
  * Where it is an absence, the check asks whether anything in the source is
- * named for the missing thing, which is weaker — and weaker in the safe
- * direction, since a name can appear without the behaviour and then the line
- * comes out and is replaced by something sharper. What cannot happen is the
- * behaviour arriving while the line stays.
+ * named for the missing thing, which is weaker.
+ *
+ * It was once claimed here that it is weaker only in the safe direction — that
+ * a name can appear without the behaviour, but not the behaviour without a
+ * name. That was wrong, and a line of this list proved it. "Scenarios are not
+ * serialised" was paired with a search for a member of `ScenarioSet` called
+ * something like `serialise` or `toJSON`, and serialisation arrived as a
+ * module that writes a whole model, `ScenarioSet` untouched. The behaviour was
+ * there, the name was not, and this gate would have kept the stale line.
+ *
+ * So a name search is a last resort, used only where the absence of a feature
+ * leaves nothing to call, and never where the gap is of the form "X cannot be
+ * written down": that one is checked by trying to write X down. Three entries
+ * below are name searches for features that have no entry point at all —
+ * implicit intersection, a block entered over a range, a sort within a row —
+ * and each would have to grow an API before it could be checked any other way.
  *
  * There is no exemption mechanism, deliberately.
  */
@@ -218,8 +231,28 @@ const GAPS: readonly Gap[] = [
       refusesInput("=Sheet2!A1") && nothingNamed(/addSheet|sheetNamed|activeSheet/i),
   },
   {
-    anchor: "Scenarios are not serialised",
-    stillOpen: () => noMemberNamed("ScenarioSet", /serialis|serializ|toJSON|fromJSON/i),
+    anchor: "A document carries a model but not a session",
+    // Behavioural on the half that can be: a document round trip is run, and
+    // the history and the clipboard are required not to survive it. The
+    // browser half is a file search, because the absence of a feature in an
+    // interface leaves nothing to call.
+    stillOpen: () => {
+      const book = new Workbook();
+      book.setCells({ A1: "1" });
+      book.setCell("A1", "2");
+      const { book: again } = readDocument(writeDocument(book));
+      // The pattern is the module's own exports and its path, not the word
+      // "document": a first draft searched for that and matched
+      // `document.createElement` six times over, so the browser half of the
+      // line read as closed on the strength of the DOM global.
+      const reaches = /writeDocument|readDocument|io\/document/;
+      return (
+        again.undo() === false &&
+        fileLacks("web/src/core/commands.ts", reaches) &&
+        fileLacks("web/src/ui/menu.ts", reaches) &&
+        fileLacks("web/src/ui/app.ts", reaches)
+      );
+    },
   },
   {
     anchor: "A fraction code cannot be combined with a decimal point",

@@ -25,3 +25,4 @@ export type {
 export * from "./format/index.js";
 export * from "./functions/index.js";
 export * from "./io/csv.js";
+export * from "./io/document.js";
