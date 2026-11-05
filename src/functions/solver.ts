@@ -22,6 +22,19 @@ export interface SolveOptions {
   readonly upper?: number;
   /** Absolute tolerance on the function value. */
   readonly tolerance?: number;
+  /**
+   * Cap on the iterations of *each* search: Newton's steps, and bisection's
+   * halvings. It is not a cap on function evaluations, and it does not bound
+   * the bracketing scan, which enumerates a fixed geometric grid whose length
+   * follows from the bounds rather than from any convergence test.
+   *
+   * A budget too small to converge means no root, not a shorter answer:
+   * bisection returns the midpoint of an interval it has not finished
+   * narrowing, and that midpoint is not a root. Nor is a value that is not a
+   * positive whole number a number of iterations, so `0`, `-3` and `2.5` are
+   * refused the same way, by returning `null` — `solveRate` has one failure
+   * channel and callers in the function layer turn it into `#NUM!`.
+   */
   readonly maxIterations?: number;
 }
 
@@ -70,6 +83,7 @@ function bracketAndBisect(
   lower: number,
   upper: number,
   tolerance: number,
+  maxIterations: number,
 ): number | null {
   // Geometric scan: rates of interest cluster near zero but the search still
   // has to reach the far tail, and a linear scan fine enough for the first
@@ -100,7 +114,7 @@ function bracketAndBisect(
     }
     if (fx === 0) return x;
     if (Number.isFinite(previousF) && previousF * fx < 0) {
-      return bisect(f, previousX, x, tolerance);
+      return bisect(f, previousX, x, tolerance, maxIterations);
     }
     previousX = x;
     previousF = fx;
@@ -108,16 +122,30 @@ function bracketAndBisect(
   return null;
 }
 
+/**
+ * Halve a bracket until the function value is within tolerance or the interval
+ * is narrower than any answer could distinguish.
+ *
+ * Returns `null` when neither happens inside the budget. The old code returned
+ * the midpoint regardless, which is the one thing a bisection must not do: a
+ * midpoint of an interval still a hundredth wide is not a root, and handing it
+ * back makes a search that ran out of allowance indistinguishable from one
+ * that succeeded. The branch is unreachable at the default budget — the widest
+ * bracket the scan can produce needs about seventy halvings and gets two
+ * hundred — so only a caller tightening {@link SolveOptions.maxIterations}
+ * ever sees it, which is exactly the case the option exists to serve.
+ */
 function bisect(
   f: (x: number) => number,
   low: number,
   high: number,
   tolerance: number,
-): number {
+  maxIterations: number,
+): number | null {
   let a = low;
   let b = high;
   let fa = f(a);
-  for (let i = 0; i < 200; i++) {
+  for (let i = 0; i < maxIterations; i++) {
     const mid = (a + b) / 2;
     const fm = f(mid);
     if (Math.abs(fm) < tolerance || (b - a) / 2 < 1e-15) return mid;
@@ -128,7 +156,7 @@ function bisect(
       fa = fm;
     }
   }
-  return (a + b) / 2;
+  return null;
 }
 
 /**
@@ -148,8 +176,10 @@ export function solveRate(
     maxIterations = DEFAULTS.maxIterations,
   } = options;
 
+  if (!Number.isInteger(maxIterations) || maxIterations < 1) return null;
+
   const fromNewton = newton(f, guess, tolerance, maxIterations, lower, upper);
   if (fromNewton !== null) return fromNewton;
 
-  return bracketAndBisect(f, lower, upper, tolerance);
+  return bracketAndBisect(f, lower, upper, tolerance, maxIterations);
 }

@@ -703,3 +703,30 @@ tree green and the public API usable.
       pinned count alone changes nothing, because the pairing already catches
       a one-sided edit — what the count catches is a line added to both places
       at once, which is checked separately
+
+## Phase 40 — Options that only ever get their default
+
+- [x] A gate parsing the source for the optional properties of every exported
+      interface, requiring of each that something outside the declaring file
+      chooses it, or that the declaring file produces it and something outside
+      reads it
+- [x] The two arms rather than a classification, after a first draft deciding
+      input from output by "appears as a parameter type" misfiled four result
+      shapes that are passed to renderers
+- [x] The rule extracted as a predicate and driven by a map built for it, since
+      a rule the source happens not to exercise is untested, including the two
+      ways each arm can be weakened
+- [x] The survey asserted before the rule runs, because "nothing is unused"
+      passes over an empty survey
+- [x] The one thing it found: the rate solver's iteration cap bounded Newton's
+      loop and nothing else, bisection having 200 written into it as a literal
+- [x] A cap of five measured at 251 evaluations against the default's 19, for
+      an answer 350 times further from the root, because tightening it did not
+      shorten the search but replaced it
+- [x] Bisection bounded by the cap, and returning no root rather than the
+      midpoint of an interval it never finished narrowing
+- [x] A budget that is not a positive whole number refused without evaluating
+      anything, where 0, -3 and 2.5 each used to spend 262 evaluations
+- [x] The default proved unchanged, and the worst bracket the scan can produce
+      measured at 49 halvings against the 200 it is given
+- [x] Nine ways of getting it wrong confirmed to fail
