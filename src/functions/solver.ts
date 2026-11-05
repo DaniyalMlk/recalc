@@ -88,21 +88,32 @@ function bracketAndBisect(
   // Geometric scan: rates of interest cluster near zero but the search still
   // has to reach the far tail, and a linear scan fine enough for the first
   // would need millions of steps to cover the second.
-  const points: number[] = [lower];
+  //
+  // Every point is checked against *both* ends. The earlier version checked
+  // each half against the end it was nearer — negative magnitudes against
+  // `lower`, positive ones against `upper` — and pushed zero unconditionally,
+  // which left three ways out of the window: a positive point below `lower`, a
+  // negative point above `upper`, and a zero outside either. The window is the
+  // caller's statement about where a rate can lie, so a root found outside it
+  // is not an answer to the question asked.
+  const points: number[] = [lower, upper];
+  const within = (x: number): boolean => x > lower && x < upper;
   for (let exponent = -6; exponent <= 6; exponent += 0.05) {
     const magnitude = Math.pow(10, exponent);
-    if (-magnitude > lower) points.push(-magnitude);
+    if (within(-magnitude)) points.push(-magnitude);
+    if (within(magnitude)) points.push(magnitude);
   }
-  points.push(0);
-  for (let exponent = -6; exponent <= 6; exponent += 0.05) {
-    const magnitude = Math.pow(10, exponent);
-    if (magnitude < upper) points.push(magnitude);
-  }
-  points.push(upper);
+  if (within(0)) points.push(0);
   points.sort((a, b) => a - b);
 
   let previousX = points[0]!;
   let previousF = f(previousX);
+  // The loop below tests each point against the one before it, so the first
+  // point is only ever a bracket end and never a root in its own right. A
+  // sign *change* at zero is not a change, so a root sitting exactly on the
+  // lower bound was invisible: `previousF * fx < 0` is false when `previousF`
+  // is zero, whatever `fx` is.
+  if (previousF === 0) return previousX;
 
   for (let i = 1; i < points.length; i++) {
     const x = points[i]!;
@@ -177,8 +188,19 @@ export function solveRate(
   } = options;
 
   if (!Number.isInteger(maxIterations) || maxIterations < 1) return null;
+  // An empty or inverted window holds no rate, so there is nothing to search.
+  if (!(lower < upper)) return null;
 
-  const fromNewton = newton(f, guess, tolerance, maxIterations, lower, upper);
+  // Newton checks every step it takes against the window but not the point it
+  // starts from, so a guess outside the window could be returned as the root
+  // the moment the function happened to be within tolerance there. A guess
+  // outside the window is not a start, and the bracketing search decides
+  // instead — which is what already happened whenever Newton's first step left
+  // the window, so the fallback is the established answer for this case.
+  const fromNewton =
+    guess > lower && guess < upper
+      ? newton(f, guess, tolerance, maxIterations, lower, upper)
+      : null;
   if (fromNewton !== null) return fromNewton;
 
   return bracketAndBisect(f, lower, upper, tolerance, maxIterations);
