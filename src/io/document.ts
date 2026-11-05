@@ -133,7 +133,7 @@ function loadValue(stored: unknown, where: string): Value {
     }
     const detail = record["detail"];
     if (detail !== undefined && typeof detail !== "string") {
-      throw new DocumentError(`${where}: detail must be text`);
+      throw new DocumentError(`${where}.detail must be text`);
     }
     return err(code as ErrorCode, detail as string | undefined);
   }
