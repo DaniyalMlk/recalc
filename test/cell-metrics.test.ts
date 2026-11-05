@@ -8,6 +8,7 @@ import {
   CHAR_WIDTH_RATIO,
   charsForWidth,
   displayValue,
+  usableMetric,
 } from "../web/src/core/display.js";
 
 /**
@@ -115,6 +116,19 @@ describe("the cell metrics agree with the stylesheet", () => {
     expect(displayValue(1 / 3, charsForWidth(104)).text).toBe("0.3333333333");
   });
 
+  it("actually uses both arguments, rather than its own constants", () => {
+    // The gate requires a call site to pass the argument. It cannot require
+    // the body to read it, and a body that takes the padding off the constant
+    // instead would satisfy every other check here: the numbers above all use
+    // the defaults. So each argument is moved on its own and has to move the
+    // answer.
+    expect(charsForWidth(104)).toBe(12);
+    expect(charsForWidth(104, CELL_FONT_SIZE * CHAR_WIDTH_RATIO, 0)).toBe(13);
+    expect(charsForWidth(104, CELL_FONT_SIZE * CHAR_WIDTH_RATIO, 29)).toBe(10);
+    expect(charsForWidth(104, 6.875, CELL_PADDING)).toBe(13);
+    expect(charsForWidth(104, 15, CELL_PADDING)).toBe(6);
+  });
+
   it("never reports less than one character, however narrow", () => {
     for (const pixels of [0, 1, 13, 14, 15, 40]) {
       expect(charsForWidth(pixels)).toBeGreaterThanOrEqual(1);
@@ -122,5 +136,24 @@ describe("the cell metrics agree with the stylesheet", () => {
     expect(charsForWidth(14)).toBe(1);
     expect(charsForWidth(21)).toBe(1);
     expect(charsForWidth(22)).toBe(1);
+  });
+
+  it("keeps a measurement only when it could be one", () => {
+    // The rule the browser probe falls back through, as a function, because
+    // the probe itself needs a page and this does not. A measurement that
+    // cannot be a character width is the common failure — a detached element,
+    // or one under a display:none ancestor, measures zero — and a guessed
+    // width is wrong by a character here and there where a zero one divides
+    // by zero and shows every cell as one character wide.
+    expect(usableMetric(7.5015625, 7.5)).toBe(7.5015625);
+    expect(usableMetric(0, 7.5)).toBe(7.5);
+    expect(usableMetric(-3, 7.5)).toBe(7.5);
+    expect(usableMetric(Number.NaN, 7.5)).toBe(7.5);
+    expect(usableMetric(Number.POSITIVE_INFINITY, 7.5)).toBe(7.5);
+    // Padding is the one measurement where zero is an answer rather than a
+    // failure: a cell with no padding has none.
+    expect(usableMetric(0, 14, true)).toBe(0);
+    expect(usableMetric(-1, 14, true)).toBe(14);
+    expect(usableMetric(Number.NaN, 14, true)).toBe(14);
   });
 });

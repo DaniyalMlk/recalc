@@ -2,6 +2,7 @@ import {
   CELL_FONT_SIZE,
   CELL_PADDING,
   CHAR_WIDTH_RATIO,
+  usableMetric,
 } from "../core/display.js";
 
 /**
@@ -65,13 +66,10 @@ export function measureCell(cell: Element): CellMetrics {
     Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
 
   return {
-    charWidth:
-      Number.isFinite(measured) && measured > 0
-        ? measured
-        : ASSUMED_METRICS.charWidth,
-    padding: Number.isFinite(padding) && padding >= 0
-      ? padding
-      : ASSUMED_METRICS.padding,
+    charWidth: usableMetric(measured, ASSUMED_METRICS.charWidth),
+    // A cell with no padding at all is a cell with no padding, not a failed
+    // measurement, so zero is allowed here and refused for the advance.
+    padding: usableMetric(padding, ASSUMED_METRICS.padding, true),
   };
 }
 

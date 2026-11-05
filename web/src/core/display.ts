@@ -147,3 +147,28 @@ function trimZeros(text: string): string {
   if (!text.includes(".")) return text;
   return text.replace(/\.?0+$/, "");
 }
+
+/**
+ * A measurement of the page, or the written-down fallback when it cannot be
+ * one.
+ *
+ * A detached element, or one under a `display: none` ancestor, measures zero,
+ * and a page whose fonts have not loaded can measure strangely. A guessed
+ * character width is wrong by a character here and there; a zero one divides
+ * by zero and reports every cell as one character wide, and a negative padding
+ * reports a cell as wider than it is.
+ *
+ * It is here rather than beside the measuring code because the measuring code
+ * needs a browser and this does not, which is the difference between a rule
+ * that is tested and one that is merely written down.
+ */
+export function usableMetric(
+  measured: number,
+  fallback: number,
+  allowZero = false,
+): number {
+  if (!Number.isFinite(measured)) return fallback;
+  if (measured < 0) return fallback;
+  if (measured === 0 && !allowZero) return fallback;
+  return measured;
+}
