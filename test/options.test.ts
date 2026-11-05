@@ -137,16 +137,11 @@ function survey(): {
           }
         }
       }
-      if (
-        ts.isFunctionDeclaration(node) &&
-        node.name !== undefined &&
-        ts.canHaveModifiers(node) &&
-        ts.getModifiers(node)?.some(
-          (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
-        ) === true
-      ) {
-        const fn = node.name.text;
-        node.parameters.forEach((parameter, index) => {
+      const collect = (
+        fn: string,
+        list: ts.NodeArray<ts.ParameterDeclaration>,
+      ): void => {
+        list.forEach((parameter, index) => {
           if (!ts.isIdentifier(parameter.name)) return;
           if (
             parameter.questionToken === undefined &&
@@ -156,6 +151,33 @@ function survey(): {
           }
           parameters.push({ fn, name: parameter.name.text, index, file });
         });
+      };
+      if (
+        ts.isFunctionDeclaration(node) &&
+        node.name !== undefined &&
+        ts.canHaveModifiers(node) &&
+        ts.getModifiers(node)?.some(
+          (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+        ) === true
+      ) {
+        collect(node.name.text, node.parameters);
+      }
+      // A method of an exported class is the same claim again. Private ones
+      // are not: a parameter nobody outside the class can reach is a shape
+      // rather than an offer, exactly as an optional property of an
+      // unexported interface is.
+      if (
+        ts.isMethodDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        ts.isClassDeclaration(node.parent) &&
+        ts.getModifiers(node.parent)?.some(
+          (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+        ) === true &&
+        ts.getModifiers(node)?.some(
+          (modifier) => modifier.kind === ts.SyntaxKind.PrivateKeyword,
+        ) !== true
+      ) {
+        collect(node.name.text, node.parameters);
       }
       if (ts.isCallExpression(node)) {
         // Matched by name, which cannot tell two functions with the same name
@@ -297,9 +319,16 @@ describe("every optional property is used outside the module that declares it", 
       "charsForWidth(#1)",
       "charsForWidth(#2)",
       "displayValue(#1)",
+      // A method of an exported class, which the first version of this could
+      // not see at all.
+      "insertRows(#1)",
+      "advance(#1)",
     ]) {
       expect(names).toContain(certain);
     }
+    expect(
+      parameters.filter((p) => p.fn === "insertRows").length,
+    ).toBeGreaterThan(0);
     // And the call-site survey found calls at all, since "every parameter was
     // passed" is satisfied by a table that thinks everything was called with
     // every argument.

@@ -32,6 +32,9 @@ import {
 } from "../src/analysis/amortisation.js";
 import type { LoanTerms } from "../src/functions/amortisation.js";
 import { COUPON_REFERENCE } from "./coupon-reference.js";
+import { ScenarioSet } from "../src/analysis/scenarios.js";
+import { exportCsv, importCsv } from "../src/io/csv.js";
+import { readDocument, writeDocument } from "../src/io/document.js";
 
 export interface Check {
   /** The row label, which is also the left-hand cell of the README table. */
@@ -530,7 +533,138 @@ export function measure(): readonly Check[] {
     scheduleMatchesReference(),
     steppedScheduleAgrees(),
     accrualTelescopes(),
+    documentCarriesTheModel(),
   ];
+}
+
+
+/**
+ * A model written down, against the same model through CSV.
+ *
+ * A round trip on its own is a weak claim: "it came back" holds of any format,
+ * including one that writes nothing and reads an empty sheet. What makes this
+ * a check is the other column. CSV is the only other thing the engine writes,
+ * and it was the only one until recently, so the question the row answers is
+ * what a model loses by being kept in it — and the answer is counted on both
+ * sides rather than described.
+ *
+ * CSV is given its best showing: `formulas` mode, read back with `formulas`
+ * on, which is the mode that keeps the most. The formulas survive that. The
+ * formats, the names and the scenarios do not, and no mode of CSV has anywhere
+ * to put them.
+ */
+function documentCarriesTheModel(): Check {
+  const build = (): { book: Workbook; scenarios: ScenarioSet } => {
+    const book = new Workbook();
+    book.defineName("RATE", "B1");
+    book.setCells({
+      A1: "Discount rate",
+      B1: "0.09",
+      A2: "Year",
+      B2: "0",
+      C2: "1",
+      D2: "2",
+      E2: "3",
+      A3: "Cash flow",
+      B3: "-250000",
+      C3: "60000",
+      D3: "85000",
+      E3: "110000",
+      A4: "Discounted",
+      B4: "=B3",
+      C4: "=C3/(1+RATE)^C2",
+      D4: "=D3/(1+RATE)^D2",
+      E4: "=E3/(1+RATE)^E2",
+      A5: "Cumulative",
+      C5: "=B4+C4",
+      D5: "=C5+D4",
+      E5: "=D5+E4",
+      A6: "NPV",
+      B6: "=SUM(B4:E4)",
+      A7: "IRR",
+      B7: "=IRR(B3:E3)",
+      A8: "Verdict",
+      B8: '=IF(B6>0,"accept","reject")',
+    });
+    book.setFormat("B4:E5", "#,##0.00");
+    book.setFormat("B6", "#,##0");
+    const scenarios = new ScenarioSet();
+    scenarios.capture(book, "Base", ["B1", "C3", "D3", "E3"]);
+    scenarios.define("Downside", [
+      ["B1", "0.14"],
+      ["C3", "40000"],
+    ]);
+    return { book, scenarios };
+  };
+
+  const { book, scenarios } = build();
+  const addresses = Object.keys(book.toInputMap()).sort();
+  const displays = (sheet: Workbook): string[] =>
+    addresses.map((address) => `${address}=${sheet.getDisplay(address)}`);
+  const formulas = addresses.filter(
+    (address) => book.getFormula(address) !== null,
+  ).length;
+
+  const through = readDocument(writeDocument(book, scenarios));
+  const viaCsv = new Workbook();
+  importCsv(viaCsv, exportCsv(book, { mode: "formulas" }), { formulas: true });
+
+  const sameDisplays =
+    displays(through.book).join("|") === displays(book).join("|");
+  const sameFormats =
+    JSON.stringify(through.book.formatEntries()) ===
+    JSON.stringify(book.formatEntries());
+  const sameNames =
+    JSON.stringify(through.book.names()) === JSON.stringify(book.names());
+  const sameScenarios =
+    JSON.stringify(through.scenarios.list()) === JSON.stringify(scenarios.list());
+
+  const csvFormats = viaCsv.formatCount;
+  const csvNames = viaCsv.names().length;
+  const csvFormulas = addresses.filter(
+    (address) => viaCsv.getFormula(address) !== null,
+  ).length;
+
+  // Both halves. The round trip must keep everything, and the counts must not
+  // be zero on either side: a model with no formulas and no formats would
+  // survive both formats and say nothing about either.
+  const ok =
+    sameDisplays &&
+    sameFormats &&
+    sameNames &&
+    sameScenarios &&
+    formulas > 5 &&
+    book.formatCount > 2 &&
+    scenarios.size === 2 &&
+    csvFormats === 0 &&
+    csvNames === 0;
+
+  const complaints: string[] = [];
+  if (!sameDisplays) complaints.push("displays differ");
+  if (!sameFormats) complaints.push("formats differ");
+  if (!sameNames) complaints.push("names differ");
+  if (!sameScenarios) complaints.push("scenarios differ");
+  if (csvFormats !== 0 || csvNames !== 0) {
+    complaints.push(`CSV kept ${csvFormats} format(s) and ${csvNames} name(s)`);
+  }
+  if (formulas <= 5 || book.formatCount <= 2) {
+    complaints.push(
+      `the model has ${formulas} formula(s) and ${book.formatCount} format(s), too few to prove anything`,
+    );
+  }
+
+  return {
+    label:
+      "A model written to a document and read back, against the same model through CSV",
+    result:
+      `all ${addresses.length} displays identical, ${formulas} formulas, ` +
+      `${book.formatCount} formats, ${book.names().length} name and ` +
+      `${scenarios.size} scenarios carried — through CSV, ${csvFormulas} formulas ` +
+      `survive and the ${book.formatCount} formats, ${book.names().length} name ` +
+      `and ${scenarios.size} scenarios do not`,
+    ok,
+    ...(ok ? {} : { complaint: complaints.join("; ") }),
+  };
 }
 
 /** The rows as the README prints them. */

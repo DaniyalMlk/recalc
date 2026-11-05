@@ -52,6 +52,7 @@ which runs in CI and exits non-zero if any of them moves:
 | `COUPPCD` and `COUPNCD` against a published transcript of a reference spreadsheet, over month ends and the days either side of them | exact agreement on all 24 cases — 4 month ends under the end-of-month rule and 20 neighbours that must stay off it |
 | A schedule whose steps name the rate it already had, against the single-rate builder over 360 rows and five resets | below 1e-14 of the principal — and 12% apart when the same two rates come in the other order, which is why the agreement is a check |
 | The accrual `ACCRINT` sums over quasi-coupon periods against `YEARFRAC` over the same span, on the three bases where the two must agree | below 1e-15 over 6,540 cases — and past 2% on the two bases where they must not, which is why the agreement is a check |
+| A model written to a document and read back, against the same model through CSV | all 27 displays identical, 10 formulas, 9 formats, 1 name and 2 scenarios carried — through CSV, 10 formulas survive and the 9 formats, 1 name and 2 scenarios do not |
 
 **The cost rows are counts, not durations.** Milliseconds are a statement about
 the machine they were measured on and can be asserted nowhere else — which is

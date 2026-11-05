@@ -815,3 +815,25 @@ tree green and the public API usable.
 - [x] Eleven ways of getting it wrong confirmed to fail, two of them found by
       the sweep rather than written for it: a body reading its own constant
       instead of the argument, and a fallback no test could reach
+
+## Phase 44 — What a document carries that CSV does not
+
+- [x] An evidence row for the document format, the table having had none for
+      the only way the engine can write a model down
+- [x] The row made a check rather than an identity by counting the other
+      column: a round trip proves nothing on its own, since "it came back"
+      holds of a format that writes nothing and reads an empty sheet
+- [x] CSV given its best showing — formulas mode, read back with formulas on —
+      where the ten formulas survive and the nine formats, the name and the two
+      scenarios do not
+- [x] Every figure computed rather than written, and both sides asserted, since
+      a model with no formulas and no formats would survive both formats and
+      say nothing about either
+- [x] The option gate extended to the methods of exported classes, the last of
+      the three syntaxes the same claim is written in
+- [x] Private methods left out, a parameter nobody outside the class can reach
+      being a shape rather than an offer
+- [x] Nine such parameters found over `Workbook` and `Selection`, every one
+      already passed from somewhere, so the extension finds nothing — which is
+      reported rather than dressed up
+- [x] Six ways of getting it wrong confirmed to fail
