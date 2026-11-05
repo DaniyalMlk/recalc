@@ -730,3 +730,26 @@ tree green and the public API usable.
 - [x] The default proved unchanged, and the worst bracket the scan can produce
       measured at 49 halvings against the 200 it is given
 - [x] Nine ways of getting it wrong confirmed to fail
+
+## Phase 41 — The window means the window
+
+- [x] Every point the bracketing grid considers checked against both ends,
+      where each half used to be checked against the end it was nearer and zero
+      went in unconditionally
+- [x] The three leaks that left: a positive point below `lower`, a negative one
+      above `upper`, and a zero outside either
+- [x] A window containing one of two roots measured returning the other one,
+      so the caller was given a wrong root rather than no root
+- [x] Newton started only from a guess inside the window, having checked every
+      step it took against the bounds but not the point it set off from
+- [x] An empty or inverted window answered without searching, where an
+      inverted one used to sort its ends and search between them
+- [x] A root sitting exactly on the lower bound found, where a sign change at
+      zero is not a change and the first grid point was only ever a bracket end
+- [x] The invariant asserted over every ordered pair of twelve bounds against
+      five guesses, counting both the roots found and the windows refused,
+      since a search that narrowed until it found nothing would satisfy the
+      outside-the-window half on its own
+- [x] The default window proved unchanged, including the two bisection budget
+      thresholds of 26 and 49 halvings
+- [x] Eight ways of getting it wrong confirmed to fail
