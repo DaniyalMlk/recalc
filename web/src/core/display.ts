@@ -76,8 +76,51 @@ export function displayValue(value: Value, width = 12): Display {
   return { text: value, kind: "text" };
 }
 
-/** How many characters fit in a cell of this pixel width. */
-export function charsForWidth(pixels: number, charWidth = 7.55, padding = 16): number {
+/**
+ * The grid cell's horizontal padding, in pixels.
+ *
+ * `.cell` in `styles.css` is `padding: 0 7px`, so the usable width of a cell
+ * is its column width less fourteen. The same number written down in two
+ * places is how the first version of this got it wrong — it said sixteen, and
+ * nothing compared the two — so a test parses the stylesheet and requires
+ * them to agree.
+ */
+export const CELL_PADDING = 14;
+
+/**
+ * The advance of one character, as a fraction of the font size.
+ *
+ * This is a font metric and no stylesheet can give it. Of the grid's stack —
+ * `ui-monospace`, `SF Mono`, `Menlo`, `Consolas`, `Liberation Mono` — most run
+ * at 0.6 of the font size, and Chromium measures 7.5015625 for the stylesheet's
+ * `12.5px`. Consolas, which is what a Windows machine will reach, runs at
+ * 0.55. So no constant here is right everywhere, and the browser is asked
+ * instead: {@link measuredCharWidth} takes the real advance off the page and
+ * the caller passes it in. This is the fallback for a caller with no DOM, and
+ * the ratio rather than a pixel count so that changing the font size in one
+ * place changes it here too.
+ */
+export const CHAR_WIDTH_RATIO = 0.6;
+
+/** The grid's font size in pixels, as `styles.css` sets it on `.cell`. */
+export const CELL_FONT_SIZE = 12.5;
+
+/**
+ * How many characters fit in a cell of this pixel width.
+ *
+ * Both measurements are arguments because both are properties of the page
+ * rather than of this module, and because the previous pair of defaults were
+ * each wrong in the same direction — the padding by two pixels, the advance by
+ * a twentieth of one — which compounded into a count that was low for 172 of
+ * the 361 column widths between 40 and 400 pixels, and never high. At the
+ * default column width of 104 pixels it returned 11, for a column whose width
+ * is exactly twelve characters plus the padding.
+ */
+export function charsForWidth(
+  pixels: number,
+  charWidth = CELL_FONT_SIZE * CHAR_WIDTH_RATIO,
+  padding = CELL_PADDING,
+): number {
   return Math.max(1, Math.floor((pixels - padding) / charWidth));
 }
 
@@ -103,4 +146,29 @@ function tidyExponent(text: string): string {
 function trimZeros(text: string): string {
   if (!text.includes(".")) return text;
   return text.replace(/\.?0+$/, "");
+}
+
+/**
+ * A measurement of the page, or the written-down fallback when it cannot be
+ * one.
+ *
+ * A detached element, or one under a `display: none` ancestor, measures zero,
+ * and a page whose fonts have not loaded can measure strangely. A guessed
+ * character width is wrong by a character here and there; a zero one divides
+ * by zero and reports every cell as one character wide, and a negative padding
+ * reports a cell as wider than it is.
+ *
+ * It is here rather than beside the measuring code because the measuring code
+ * needs a browser and this does not, which is the difference between a rule
+ * that is tested and one that is merely written down.
+ */
+export function usableMetric(
+  measured: number,
+  fallback: number,
+  allowZero = false,
+): number {
+  if (!Number.isFinite(measured)) return fallback;
+  if (measured < 0) return fallback;
+  if (measured === 0 && !allowZero) return fallback;
+  return measured;
 }

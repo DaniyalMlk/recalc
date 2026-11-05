@@ -64,6 +64,24 @@ export interface Declared {
   readonly file: string;
 }
 
+/**
+ * An optional or defaulted parameter of an exported function.
+ *
+ * The same claim as an optional property in a different syntax, and the first
+ * version of this gate did not see it. Extending it to parameters found
+ * `charsForWidth(pixels, charWidth = 7.55, padding = 16)` in the grid's
+ * display layer, where nothing had ever passed either argument and both were
+ * wrong — the padding by two pixels against the stylesheet and the advance by
+ * a twentieth of one against what a browser measures.
+ */
+export interface DeclaredParameter {
+  readonly fn: string;
+  readonly name: string;
+  /** Its position, which is what a call site has to reach to choose it. */
+  readonly index: number;
+  readonly file: string;
+}
+
 /** Which files mention a property name, by the way they mention it. */
 export interface Mentions {
   /** Files containing `{ name: ... }` or `{ name }`. */
@@ -72,8 +90,16 @@ export interface Mentions {
   readonly inspected: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
-function survey(): { declared: Declared[]; mentions: Mentions } {
+function survey(): {
+  declared: Declared[];
+  mentions: Mentions;
+  parameters: DeclaredParameter[];
+  /** Function name to file to the most arguments any call there passed. */
+  arities: Map<string, Map<string, number>>;
+} {
   const declared: Declared[] = [];
+  const parameters: DeclaredParameter[] = [];
+  const arities = new Map<string, Map<string, number>>();
   const chosen = new Map<string, Set<string>>();
   const inspected = new Map<string, Set<string>>();
 
@@ -111,6 +137,45 @@ function survey(): { declared: Declared[]; mentions: Mentions } {
           }
         }
       }
+      if (
+        ts.isFunctionDeclaration(node) &&
+        node.name !== undefined &&
+        ts.canHaveModifiers(node) &&
+        ts.getModifiers(node)?.some(
+          (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+        ) === true
+      ) {
+        const fn = node.name.text;
+        node.parameters.forEach((parameter, index) => {
+          if (!ts.isIdentifier(parameter.name)) return;
+          if (
+            parameter.questionToken === undefined &&
+            parameter.initializer === undefined
+          ) {
+            return;
+          }
+          parameters.push({ fn, name: parameter.name.text, index, file });
+        });
+      }
+      if (ts.isCallExpression(node)) {
+        // Matched by name, which cannot tell two functions with the same name
+        // apart. That is the forgiving direction: a call to the other one
+        // counts as exercising this one, so the gate under-reports rather than
+        // inventing an offender.
+        const callee = ts.isIdentifier(node.expression)
+          ? node.expression.text
+          : ts.isPropertyAccessExpression(node.expression)
+            ? node.expression.name.text
+            : null;
+        if (callee !== null) {
+          const perFile = arities.get(callee) ?? new Map<string, number>();
+          perFile.set(
+            file,
+            Math.max(perFile.get(file) ?? 0, node.arguments.length),
+          );
+          arities.set(callee, perFile);
+        }
+      }
       if (ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node)) {
         if (ts.isIdentifier(node.name)) note(chosen, node.name.text);
       }
@@ -130,7 +195,7 @@ function survey(): { declared: Declared[]; mentions: Mentions } {
     };
     visit(tree);
   }
-  return { declared, mentions: { chosen, inspected } };
+  return { declared, mentions: { chosen, inspected }, parameters, arities };
 }
 
 /**
@@ -172,7 +237,36 @@ export function unusedOptional(
   return [...new Set(unused.map((e) => `${e.type}.${e.property}`))].sort();
 }
 
-const { declared, mentions } = survey();
+/**
+ * The parameter rule: somewhere outside the declaring file must pass an
+ * argument in that position.
+ *
+ * Positional rather than by name, because that is what choosing an optional
+ * parameter actually requires — a caller reaching the third parameter has
+ * passed the second whether it wanted to or not, which is a property of the
+ * syntax and a reason to prefer an options bag once there are two of them.
+ */
+export function unpassedParameter(
+  parameters: readonly DeclaredParameter[],
+  arities: ReadonlyMap<string, ReadonlyMap<string, number>>,
+): string[] {
+  const unpassed = parameters.filter((parameter) => {
+    const perFile = arities.get(parameter.fn);
+    if (perFile === undefined) return true;
+    let most = 0;
+    for (const [file, count] of perFile) {
+      if (file !== parameter.file) most = Math.max(most, count);
+    }
+    return most <= parameter.index;
+  });
+  return [
+    ...new Set(
+      unpassed.map((p) => `${p.fn}(#${p.index} ${p.name})`),
+    ),
+  ].sort();
+}
+
+const { declared, mentions, parameters, arities } = survey();
 
 describe("every optional property is used outside the module that declares it", () => {
   it("surveyed the source it claims to have surveyed", () => {
@@ -194,6 +288,26 @@ describe("every optional property is used outside the module that declares it", 
 
   it("leaves none of them unused", () => {
     expect(unusedOptional(declared, mentions)).toEqual([]);
+  });
+
+  it("surveyed the exported functions' parameters too", () => {
+    expect(parameters.length).toBeGreaterThan(30);
+    const names = new Set(parameters.map((p) => `${p.fn}(#${p.index})`));
+    for (const certain of [
+      "charsForWidth(#1)",
+      "charsForWidth(#2)",
+      "displayValue(#1)",
+    ]) {
+      expect(names).toContain(certain);
+    }
+    // And the call-site survey found calls at all, since "every parameter was
+    // passed" is satisfied by a table that thinks everything was called with
+    // every argument.
+    expect(arities.size).toBeGreaterThan(200);
+  });
+
+  it("leaves no optional or defaulted parameter unpassed", () => {
+    expect(unpassedParameter(parameters, arities)).toEqual([]);
   });
 });
 
@@ -256,6 +370,53 @@ describe("the rule itself", () => {
         inspected: map([["cap", ["reader.ts"]]]),
       }),
     ).toEqual(["Opts.cap"]);
+  });
+
+  const arity = (
+    entries: readonly (readonly [string, readonly (readonly [string, number])[]])[],
+  ): Map<string, Map<string, number>> =>
+    new Map(entries.map(([fn, files]) => [fn, new Map(files)]));
+
+  const parameter: DeclaredParameter = {
+    fn: "charsForWidth",
+    name: "padding",
+    index: 2,
+    file: "own.ts",
+  };
+
+  it("accepts a parameter a call elsewhere reaches", () => {
+    expect(
+      unpassedParameter([parameter], arity([["charsForWidth", [["caller.ts", 3]]]])),
+    ).toEqual([]);
+  });
+
+  it("rejects a parameter no call elsewhere reaches", () => {
+    // Two arguments does not reach the third parameter, which is the whole
+    // point of counting positions rather than calls.
+    expect(
+      unpassedParameter([parameter], arity([["charsForWidth", [["caller.ts", 2]]]])),
+    ).toEqual(["charsForWidth(#2 padding)"]);
+  });
+
+  it("does not count a call in the declaring file", () => {
+    expect(
+      unpassedParameter([parameter], arity([["charsForWidth", [["own.ts", 3]]]])),
+    ).toEqual(["charsForWidth(#2 padding)"]);
+  });
+
+  it("rejects a parameter of a function nothing calls", () => {
+    expect(unpassedParameter([parameter], arity([]))).toEqual([
+      "charsForWidth(#2 padding)",
+    ]);
+  });
+
+  it("takes the longest call, not the last", () => {
+    expect(
+      unpassedParameter(
+        [parameter],
+        arity([["charsForWidth", [["a.ts", 3], ["b.ts", 1]]]]),
+      ),
+    ).toEqual([]);
   });
 
   it("names every offender once, and sorted", () => {

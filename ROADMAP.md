@@ -785,3 +785,33 @@ tree green and the public API usable.
       feature arrived as a module — and its rule narrowed accordingly
 - [x] A browser-source search for the word `document` found matching
       `document.createElement` six times, and anchored to the module's exports
+
+## Phase 43 — The two constants nobody had ever chosen
+
+- [x] The option gate extended to the optional and defaulted parameters of
+      exported functions, the same claim in a different syntax, and positional
+      because reaching the third parameter means passing the second
+- [x] The one function it found: `charsForWidth(pixels, charWidth = 7.55,
+      padding = 16)`, where nothing had ever passed either argument
+- [x] Both measured against the page they serve — the stylesheet says
+      `0 7px`, so 14 and not 16, and Chromium measures 7.5015625 at the
+      stylesheet's `12.5px`, so 7.5 and not 7.55
+- [x] Both wrong in the same direction and compounding, so the count was low
+      for 172 of the 361 column widths between 40 and 400 pixels and never
+      high
+- [x] The default column width of 104 pixels found to be exactly twelve
+      characters plus the real padding, where the function returned eleven,
+      and `237560.62069063215` shown as `237560.6207` in a column with the
+      room for `237560.62069`
+- [x] The padding tied to the stylesheet by a test that parses it, since a
+      layout constant written down twice with nothing comparing them is how
+      this happened
+- [x] The advance measured off the page instead, because it is a font metric
+      no stylesheet can give and the grid's stack runs at 0.6 of the font size
+      except Consolas at 0.55 — which is also what makes the parameters get
+      chosen from outside the module
+- [x] A measurement that cannot be a character width falling back, zero being
+      a failure for an advance and an answer for a padding
+- [x] Eleven ways of getting it wrong confirmed to fail, two of them found by
+      the sweep rather than written for it: a body reading its own constant
+      instead of the argument, and a fallback no test could reach

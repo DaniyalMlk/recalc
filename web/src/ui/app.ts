@@ -29,6 +29,8 @@ import {
 } from "../core/formats.js";
 import type { SelectionFormat } from "../core/formats.js";
 import { charsForWidth, displayValue } from "../core/display.js";
+import { probeCellMetrics } from "./metrics-probe.js";
+import type { CellMetrics } from "./metrics-probe.js";
 import { highlightFormula } from "../core/highlight.js";
 import type { Highlight } from "../core/highlight.js";
 import { AxisMetrics } from "../core/metrics.js";
@@ -151,7 +153,16 @@ export class App {
   private clipboard: Clipboard | null = null;
   private copied: CellRect | null = null;
 
+  /**
+   * How wide a character is and how much padding a cell has, measured off the
+   * page once rather than written down here. The grid's only use for them is
+   * deciding how many digits of a number a column can show, and a stack of
+   * monospace fonts does not agree on the first of them.
+   */
+  private readonly cellMetrics: CellMetrics;
+
   constructor(private readonly el: AppElements) {
+    this.cellMetrics = probeCellMetrics(el.cellLayer);
     this.grid = new GridView(
       {
         body: el.body,
@@ -261,7 +272,14 @@ export class App {
     const kind = displayValue(value).kind;
     const code = this.workbook.formatOf(address);
     if (code === null) {
-      const display = displayValue(value, charsForWidth(this.cols.sizeOf(col)));
+      const display = displayValue(
+        value,
+        charsForWidth(
+          this.cols.sizeOf(col),
+          this.cellMetrics.charWidth,
+          this.cellMetrics.padding,
+        ),
+      );
       return {
         text: display.text,
         kind: display.kind,
