@@ -18,5 +18,7 @@ import "./inference.js";
 
 export * from "./registry.js";
 export { solveRate } from "./solver.js";
+export type { SolveOptions } from "./solver.js";
+export type { LoanTerms } from "./amortisation.js";
 export { setClock } from "./date.js";
 export type { Clock } from "./date.js";
