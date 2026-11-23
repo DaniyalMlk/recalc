@@ -39,6 +39,13 @@ import { rectContains } from "../core/selection.js";
 import type { CellRect, Direction } from "../core/selection.js";
 import { pageStep } from "../core/viewport.js";
 import {
+  documentFileName,
+  openDocument,
+  replaceSheet,
+  saveDocument,
+} from "../core/document.js";
+import type { Sheet } from "../core/document.js";
+import {
   SAMPLE_FORMATS,
   SAMPLE_NAMES,
   SAMPLE_SHEET,
@@ -123,6 +130,9 @@ export interface AppElements {
   readonly importCsv: HTMLButtonElement;
   readonly exportCsv: HTMLButtonElement;
   readonly fileInput: HTMLInputElement;
+  readonly openDocument: HTMLButtonElement;
+  readonly saveDocument: HTMLButtonElement;
+  readonly documentInput: HTMLInputElement;
   readonly dropzone: HTMLElement;
   readonly sheet: HTMLElement;
   readonly cellPanel: HTMLElement;
@@ -809,12 +819,19 @@ export class App {
         : `Redo ${this.workbook.redoLabel}`;
   }
 
+  /**
+   * The sheet as a document sees it: the cells and the scenarios over them.
+   *
+   * The scenarios live in the what-if panel, which is why the app's own
+   * actions used to forget them. Anything that puts a new sheet up goes
+   * through {@link replaceSheet} with this, so the two are replaced together.
+   */
+  private get sheetModel(): Sheet {
+    return { workbook: this.workbook, scenarios: this.whatIf.scenarioSet };
+  }
+
   private loadSample(): void {
-    this.workbook.setCells(
-      Object.fromEntries(
-        Object.keys(this.workbook.toInputMap()).map((address) => [address, null]),
-      ),
-    );
+    replaceSheet(this.sheetModel, null);
     this.cols.resetAll();
     for (const [col, width] of Object.entries(SAMPLE_WIDTHS)) {
       this.cols.resize(Number(col), width);
@@ -829,6 +846,7 @@ export class App {
 
     this.setCopied(null);
     this.workbook.clearHistory();
+    this.whatIf.refresh();
     this.el.sheetName.textContent = "project appraisal";
     this.lastRecalc = `${this.workbook.cellCount} cells loaded`;
     this.selection.moveTo({ row: 0, col: 0 });
@@ -837,23 +855,14 @@ export class App {
   }
 
   private clearSheet(): void {
-    for (const entry of this.workbook.names()) {
-      this.workbook.deleteName(entry.name);
-    }
-    // Formats belong to the sheet being cleared, not to the empty one that
-    // replaces it. Leaving them behind makes the next number typed into a
-    // cleared cell arrive as a percentage of a sheet that is gone.
-    for (const entry of this.workbook.formatEntries()) {
-      this.workbook.clearFormat(entry.address);
-    }
-    this.workbook.setCells(
-      Object.fromEntries(
-        Object.keys(this.workbook.toInputMap()).map((address) => [address, null]),
-      ),
-    );
+    // Names, formats and scenarios all belong to the sheet being cleared, not
+    // to the empty one that replaces it. A format left behind makes the next
+    // number typed into a cleared cell arrive as a percentage of a sheet that
+    // is gone; a scenario left behind can be applied to cells it never saw.
+    replaceSheet(this.sheetModel, null);
     this.cols.resetAll();
     this.setCopied(null);
-    this.workbook.clearHistory();
+    this.whatIf.refresh();
     this.el.sheetName.textContent = "empty sheet";
     this.lastRecalc = "";
     this.selection.moveTo({ row: 0, col: 0 });
@@ -911,7 +920,82 @@ export class App {
     this.updateStatus();
   }
 
+  /**
+   * Put a document up in place of the sheet.
+   *
+   * Column widths are reset rather than kept, because they belong to the sheet
+   * being replaced and a document does not carry any. A refused file changes
+   * nothing but the status line: the reason it was refused is the useful
+   * thing to show, and the sheet that was open is still worth having.
+   */
+  private openText(text: string, name: string): void {
+    const opened = openDocument(this.sheetModel, text);
+    if (!opened.ok) {
+      this.lastRecalc = `${name}: ${opened.message}`;
+      this.updateStatus();
+      return;
+    }
+    this.cols.resetAll();
+    this.setCopied(null);
+    this.whatIf.refresh();
+    this.el.sheetName.textContent = name.replace(/\.json$/i, "");
+    const scenarios =
+      opened.scenarios === 0
+        ? ""
+        : `, ${opened.scenarios} scenario${opened.scenarios === 1 ? "" : "s"}`;
+    this.lastRecalc = `${opened.cells} cells opened${scenarios}`;
+    this.selection.moveTo({ row: 0, col: 0 });
+    this.grid.render();
+    this.syncSelection();
+  }
+
+  /**
+   * Hand the whole model back as a document: what `.save` writes in the shell.
+   *
+   * CSV export stays beside it because it is the format other programs read.
+   * This is the one that comes back as the same model.
+   */
+  private downloadDocument(): void {
+    const text = saveDocument(this.sheetModel);
+    const url = URL.createObjectURL(
+      new Blob([text], { type: "application/json;charset=utf-8" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = documentFileName(this.el.sheetName.textContent ?? "");
+    link.click();
+    URL.revokeObjectURL(url);
+
+    this.lastRecalc = `saved ${link.download}`;
+    this.updateStatus();
+  }
+
+  /** A dropped file is a document if it says so by name, CSV otherwise. */
+  private receive(file: File): void {
+    void file.text().then((text) => {
+      if (/\.json$/i.test(file.name)) this.openText(text, file.name);
+      else this.importText(text, file.name);
+      this.el.body.focus();
+    });
+  }
+
   private bindInterchange(): void {
+    this.el.openDocument.addEventListener("click", () => {
+      this.el.documentInput.click();
+    });
+
+    this.el.documentInput.addEventListener("change", () => {
+      const file = this.el.documentInput.files?.[0];
+      if (file === undefined) return;
+      this.receive(file);
+      this.el.documentInput.value = "";
+    });
+
+    this.el.saveDocument.addEventListener("click", () => {
+      this.downloadDocument();
+      this.el.body.focus();
+    });
+
     this.el.importCsv.addEventListener("click", () => {
       this.el.fileInput.click();
     });
@@ -961,7 +1045,7 @@ export class App {
       show(false);
       const file = event.dataTransfer?.files?.[0];
       if (file === undefined) return;
-      void file.text().then((text) => this.importText(text, file.name));
+      this.receive(file);
     });
   }
 

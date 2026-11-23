@@ -1328,6 +1328,21 @@ figure, because "Millions" means nothing beside a capital outlay until it reads
 disagree ticks nothing. A format's `[Red]` section is honoured on the grid, so
 a negative in an accounting format arrives in parentheses and in red.
 
+**Save** writes the whole model as a document, byte for byte what `.save`
+writes in the shell: the cells as typed, the formats, the names and the
+scenarios. **Open** reads one back, from the file picker or by dropping a
+`.json` file on the grid (a dropped `.csv` is still imported at the selected
+cell). Opening replaces the sheet rather than reading into it, and it reads the
+whole file before touching anything, so a file that turns out not to be a
+document, or to be one from a later version, leaves the open sheet as it was
+and says why on the status line. Column widths are not part of a document and
+reset on open.
+
+Clear, Load example and Open all go through one replace step, which takes the
+scenarios with the sheet. Before it existed, a scenario captured over the
+example survived Clear and could be applied to an unrelated sheet, writing its
+values into cells that meant something else.
+
 ### What-if in the grid
 
 The sidebar holds two panels and shows one. The inspector follows the
@@ -1694,10 +1709,10 @@ than a wait.
   its assumptions on one tab and its output on another has to lay both on the
   same grid and keep them apart by hand, and a reference carrying a sheet name
   does not parse: `=Sheet2!A1` stops at the `!`.
-- A document carries a model but not a session: the undo history and the
-  clipboard are not in it, and the browser interface cannot write or read one.
-  `.save` and `.open` are the shell and the library, so a model built in the
-  browser is still a tab that cannot be put anywhere.
+- A document carries a model but not a session or a view: the undo history,
+  the clipboard and the column widths are not in it. A model saved from the
+  browser and opened again computes the same values in the same formats, but
+  comes back at default widths with nothing to undo.
 - A fraction code cannot be combined with a decimal point or a scientific
   exponent in the same section; both are refused with an offset, in either
   order. There is no reading of `0.0 ?/?` that is not already a fraction.

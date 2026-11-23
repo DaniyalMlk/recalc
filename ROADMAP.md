@@ -849,3 +849,23 @@ tree green and the public API usable.
       source file, rather than asserting the wording of the build script
 - [x] Confirmed to fail on the old script with a stale file in place and to
       pass on the new one, which also removes the file
+
+## Phase 46 — A model built in the browser can be put somewhere
+
+- [x] One replace step for the browser, `replaceSheet`, emptying and refilling
+      the workbook and scenario set the app and the what-if panel share, since
+      neither can be swapped for a new one the way the shell swaps its session
+- [x] Clear sheet and Load example routed through it, both having left the
+      previous sheet's scenarios in place; reproduced in a browser first, where
+      a scenario captured over the example survived both
+- [x] Save, writing the same bytes as `.save`, named after the sheet's title
+- [x] Open, from a file picker or a dropped `.json`, reading the whole file
+      before touching the sheet so that a refused one leaves it as it was
+- [x] Saved, cleared, opened and saved again in Chromium: the second document
+      byte-identical to the first, a later-version document refused with its
+      reason on the status line, a dropped `.csv` still imported
+- [x] The known-gaps line rewritten to what remains — history, clipboard and
+      column widths — after its old check, a search for three names, passed
+      with the browser able to do both things it said it could not
+- [x] Four ways of getting the replace step wrong, and two of closing the new
+      gap, confirmed to fail
