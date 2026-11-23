@@ -837,3 +837,15 @@ tree green and the public API usable.
       already passed from somewhere, so the extension finds nothing — which is
       reported rather than dressed up
 - [x] Six ways of getting it wrong confirmed to fail
+
+## Phase 45 — The tarball holds only what the sources build
+
+- [x] `build` starts from an empty `dist`, since `tsc` writes what it emits
+      and removes nothing it has stopped emitting
+- [x] A module written by hand into `dist/engine/` confirmed to reach
+      `npm pack` under the old script, `prepack` rebuilding first
+      notwithstanding
+- [x] The packaging test asserting that every shipped `.js` and `.d.ts` has a
+      source file, rather than asserting the wording of the build script
+- [x] Confirmed to fail on the old script with a stale file in place and to
+      pass on the new one, which also removes the file
