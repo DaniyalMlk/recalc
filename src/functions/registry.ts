@@ -36,7 +36,8 @@ export type Arg = ScalarArg | RangeArg | ArrayArg;
 /** A not-yet-evaluated argument, memoised by the evaluator. */
 export type LazyArg = () => Arg;
 
-interface BaseFunction {
+/** What every function definition carries, eager or lazy. */
+export interface BaseFunction {
   readonly name: string;
   readonly minArgs: number;
   /** `Infinity` for variadic functions. */

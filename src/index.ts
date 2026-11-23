@@ -1,4 +1,5 @@
 export * from "./analysis/index.js";
+export type { CallResult, Matrix } from "./engine/array.js";
 export * from "./engine/ast.js";
 export * from "./engine/errors.js";
 export * from "./engine/evaluator.js";
