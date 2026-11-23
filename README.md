@@ -1694,10 +1694,10 @@ than a wait.
   its assumptions on one tab and its output on another has to lay both on the
   same grid and keep them apart by hand, and a reference carrying a sheet name
   does not parse: `=Sheet2!A1` stops at the `!`.
-- A document carries a model but not a session: the undo history and the
-  clipboard are not in it, and the browser interface cannot write or read one.
-  `.save` and `.open` are the shell and the library, so a model built in the
-  browser is still a tab that cannot be put anywhere.
+- A document carries a model but not a session or a view: the undo history,
+  the clipboard and the column widths are not in it. A model saved from the
+  browser and opened again computes the same values in the same formats, but
+  comes back at default widths with nothing to undo.
 - A fraction code cannot be combined with a decimal point or a scientific
   exponent in the same section; both are refused with an offset, in either
   order. There is no reading of `0.0 ?/?` that is not already a fraction.

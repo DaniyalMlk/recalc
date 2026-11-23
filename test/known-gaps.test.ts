@@ -8,7 +8,9 @@ import { parseFormatCode } from "../src/format/code.js";
 import { steppedSchedule } from "../src/analysis/amortisation.js";
 import { registeredFunctionNames } from "../src/functions/index.js";
 import { exportCsv, importCsv } from "../src/io/csv.js";
-import { readDocument, writeDocument } from "../src/io/document.js";
+import { ScenarioSet } from "../src/analysis/scenarios.js";
+import { readDocument, toDocument, writeDocument } from "../src/io/document.js";
+import { openDocument, saveDocument } from "../web/src/core/document.js";
 
 /**
  * The README's known gaps, and whether each one is still a gap.
@@ -231,26 +233,29 @@ const GAPS: readonly Gap[] = [
       refusesInput("=Sheet2!A1") && nothingNamed(/addSheet|sheetNamed|activeSheet/i),
   },
   {
-    anchor: "A document carries a model but not a session",
-    // Behavioural on the half that can be: a document round trip is run, and
-    // the history and the clipboard are required not to survive it. The
-    // browser half is a file search, because the absence of a feature in an
-    // interface leaves nothing to call.
+    anchor: "A document carries a model but not a session or a view",
+    // Run through the browser's own open path, since that is where the line
+    // says the gap shows. This entry used to say the browser could not write
+    // or read a document at all, checked by searching three files for
+    // `writeDocument|readDocument|io/document` — and when the browser gained
+    // both, through `core/document.ts` and functions called `openDocument` and
+    // `saveDocument`, that search still came back empty and the gate passed
+    // with the line false. So nothing here is a name search: the round trip
+    // is performed, nothing is left to undo, and the document's fields are
+    // required to be exactly the five that carry no session and no widths.
     stillOpen: () => {
-      const book = new Workbook();
-      book.setCells({ A1: "1" });
-      book.setCell("A1", "2");
-      const { book: again } = readDocument(writeDocument(book));
-      // The pattern is the module's own exports and its path, not the word
-      // "document": a first draft searched for that and matched
-      // `document.createElement` six times over, so the browser half of the
-      // line read as closed on the strength of the DOM global.
-      const reaches = /writeDocument|readDocument|io\/document/;
+      const source = { workbook: new Workbook(), scenarios: new ScenarioSet() };
+      source.workbook.setCells({ A1: "1", A2: "=A1*2" });
+      source.workbook.setCell("A1", "2");
+      const target = { workbook: new Workbook(), scenarios: new ScenarioSet() };
+      const opened = openDocument(target, saveDocument(source));
+      const fields = Object.keys(toDocument(source.workbook)).sort().join(",");
       return (
-        again.undo() === false &&
-        fileLacks("web/src/core/commands.ts", reaches) &&
-        fileLacks("web/src/ui/menu.ts", reaches) &&
-        fileLacks("web/src/ui/app.ts", reaches)
+        opened.ok &&
+        target.workbook.getValue("A2") === 4 &&
+        target.workbook.undo() === false &&
+        readDocument(writeDocument(source.workbook)).book.undo() === false &&
+        fields === "cells,formats,names,recalc,scenarios"
       );
     },
   },
