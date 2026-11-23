@@ -38,6 +38,8 @@ import { Selection } from "../core/selection.js";
 import { rectContains } from "../core/selection.js";
 import type { CellRect, Direction } from "../core/selection.js";
 import { pageStep } from "../core/viewport.js";
+import { replaceSheet } from "../core/document.js";
+import type { Sheet } from "../core/document.js";
 import {
   SAMPLE_FORMATS,
   SAMPLE_NAMES,
@@ -809,12 +811,19 @@ export class App {
         : `Redo ${this.workbook.redoLabel}`;
   }
 
+  /**
+   * The sheet as a document sees it: the cells and the scenarios over them.
+   *
+   * The scenarios live in the what-if panel, which is why the app's own
+   * actions used to forget them. Anything that puts a new sheet up goes
+   * through {@link replaceSheet} with this, so the two are replaced together.
+   */
+  private get sheetModel(): Sheet {
+    return { workbook: this.workbook, scenarios: this.whatIf.scenarioSet };
+  }
+
   private loadSample(): void {
-    this.workbook.setCells(
-      Object.fromEntries(
-        Object.keys(this.workbook.toInputMap()).map((address) => [address, null]),
-      ),
-    );
+    replaceSheet(this.sheetModel, null);
     this.cols.resetAll();
     for (const [col, width] of Object.entries(SAMPLE_WIDTHS)) {
       this.cols.resize(Number(col), width);
@@ -829,6 +838,7 @@ export class App {
 
     this.setCopied(null);
     this.workbook.clearHistory();
+    this.whatIf.refresh();
     this.el.sheetName.textContent = "project appraisal";
     this.lastRecalc = `${this.workbook.cellCount} cells loaded`;
     this.selection.moveTo({ row: 0, col: 0 });
@@ -837,23 +847,14 @@ export class App {
   }
 
   private clearSheet(): void {
-    for (const entry of this.workbook.names()) {
-      this.workbook.deleteName(entry.name);
-    }
-    // Formats belong to the sheet being cleared, not to the empty one that
-    // replaces it. Leaving them behind makes the next number typed into a
-    // cleared cell arrive as a percentage of a sheet that is gone.
-    for (const entry of this.workbook.formatEntries()) {
-      this.workbook.clearFormat(entry.address);
-    }
-    this.workbook.setCells(
-      Object.fromEntries(
-        Object.keys(this.workbook.toInputMap()).map((address) => [address, null]),
-      ),
-    );
+    // Names, formats and scenarios all belong to the sheet being cleared, not
+    // to the empty one that replaces it. A format left behind makes the next
+    // number typed into a cleared cell arrive as a percentage of a sheet that
+    // is gone; a scenario left behind can be applied to cells it never saw.
+    replaceSheet(this.sheetModel, null);
     this.cols.resetAll();
     this.setCopied(null);
-    this.workbook.clearHistory();
+    this.whatIf.refresh();
     this.el.sheetName.textContent = "empty sheet";
     this.lastRecalc = "";
     this.selection.moveTo({ row: 0, col: 0 });
