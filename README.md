@@ -1328,6 +1328,21 @@ figure, because "Millions" means nothing beside a capital outlay until it reads
 disagree ticks nothing. A format's `[Red]` section is honoured on the grid, so
 a negative in an accounting format arrives in parentheses and in red.
 
+**Save** writes the whole model as a document, byte for byte what `.save`
+writes in the shell: the cells as typed, the formats, the names and the
+scenarios. **Open** reads one back, from the file picker or by dropping a
+`.json` file on the grid (a dropped `.csv` is still imported at the selected
+cell). Opening replaces the sheet rather than reading into it, and it reads the
+whole file before touching anything, so a file that turns out not to be a
+document, or to be one from a later version, leaves the open sheet as it was
+and says why on the status line. Column widths are not part of a document and
+reset on open.
+
+Clear, Load example and Open all go through one replace step, which takes the
+scenarios with the sheet. Before it existed, a scenario captured over the
+example survived Clear and could be applied to an unrelated sheet, writing its
+values into cells that meant something else.
+
 ### What-if in the grid
 
 The sidebar holds two panels and shows one. The inspector follows the
