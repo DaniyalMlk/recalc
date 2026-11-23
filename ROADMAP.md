@@ -869,3 +869,22 @@ tree green and the public API usable.
       with the browser able to do both things it said it could not
 - [x] Four ways of getting the replace step wrong, and two of closing the new
       gap, confirmed to fail
+
+## Phase 47 — Every type a public signature mentions can be named
+
+- [x] Five types found that root exports mention and the root does not
+      export: `LoanTerms`, `SolveOptions`, `CallResult`, `Matrix`, and
+      `BaseFunction`, which two exported interfaces extend and which was not
+      exported from its own module either
+- [x] All five exported, and a consumer installing the packed tarball
+      confirmed to typecheck code naming them, where the same code against
+      the previous tarball failed five times
+- [x] A gate walking each root export's declaration — signatures, fields,
+      aliases, annotations, `extends` and `implements` — and not bodies,
+      initialisers or private members
+- [x] The rule chosen over "every module export reaches the root", which
+      would report a hundred and seventy-six helpers that are exported only so
+      a sibling module can import them
+- [x] The probe's twenty-four rules tested against source written for each,
+      which found its own branch for an arrow function's signature
+      unreachable behind the branch for a variable
