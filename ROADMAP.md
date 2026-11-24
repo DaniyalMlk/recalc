@@ -888,3 +888,19 @@ tree green and the public API usable.
 - [x] The probe's twenty-four rules tested against source written for each,
       which found its own branch for an arrow function's signature
       unreachable behind the branch for a variable
+
+## Phase 48 — The date module at the package root
+
+- [x] `src/date` re-exported from the root. It never had been, so serial
+      numbers, ISO weeks, the day-count bases and coupon schedules — 37 values
+      — could be reached only by a deep import, which `exports` blocks, and
+      the README's ISO-week example imported two of them and could not run
+- [x] Every name a README or front-page example imports from the package
+      checked against its exports
+- [x] Every directory under `src/` re-exported by the root or named as
+      internal, with the internal list checked the other way as well.
+      Phase 47's rule could not see this: a whole directory missing is
+      indistinguishable, name by name, from the helpers that rule rightly
+      leaves out
+- [x] The ISO-week example run from the root, each figure pinned to the line
+      that prints it

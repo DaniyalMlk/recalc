@@ -216,7 +216,7 @@ so the first days of January often belong to week 52 or 53 of the previous
 year. That is why the library returns a *week-year* beside the number:
 
 ```ts
-import { isoWeekOf, isoWeeksInYear } from "recalc-formula";
+import { isoWeekOf, isoWeeksInYear, serialFromCivil } from "recalc-formula";
 
 isoWeekOf(serialFromCivil(2027, 1, 1));   // { week: 53, weekYear: 2026 }
 isoWeeksInYear(2026);                     // 53
