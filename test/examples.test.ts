@@ -163,3 +163,28 @@ describe("the install lines say what is true today", () => {
     }
   });
 });
+
+describe("the front page's first example, run from the package root", () => {
+  // The page said `lastRecalculated` was 4 after editing B2. It is 5: the
+  // count is of cells the edit evaluated, and the edited cell is one of them.
+  it("prints what it says", () => {
+    const book = new recalc.Workbook();
+    book.setCells({
+      B1: 1200,
+      B2: 24.5,
+      B3: 15.25,
+      B4: 6000,
+      B6: "=B1*B2",
+      B8: "=B6-B1*B3",
+      B9: "=B8-B4",
+      B12: '=IF(B9>0,"profitable","loss-making")',
+    });
+    const cells = book.cellCount;
+    expect(page).toContain(`book.getValue("B9");     // ${String(book.getValue("B9"))}`);
+    book.setCell("B2", 26);
+    const dependents = book.recalculationOrder("B2").length - 1;
+    expect(book.lastRecalculated).toBe(dependents + 1);
+    expect(page).toContain(`book.setCell("B2", 26);  // B2 and its ${dependents} dependents, not all ${cells}`);
+    expect(page).toContain(`book.lastRecalculated;   // ${book.lastRecalculated}`);
+  });
+});

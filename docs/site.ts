@@ -212,8 +212,8 @@ book.setCells({
 });
 
 book.getValue("B9");     // 5100
-book.setCell("B2", 26);  // 4 cells recalculated, not 8
-book.lastRecalculated;   // 4</code></pre>
+book.setCell("B2", 26);  // B2 and its 4 dependents, not all 8
+book.lastRecalculated;   // 5</code></pre>
   <p><strong>The package is <code>${esc(PACKAGE)}</code>, not
   <code>recalc</code>.</strong> <code>recalc</code> on npm is an unrelated
   package, so the distribution name differs; the command line is still called
