@@ -904,3 +904,16 @@ tree green and the public API usable.
       leaves out
 - [x] The ISO-week example run from the root, each figure pinned to the line
       that prints it
+
+## Phase 49 — What the first minute tells a reader
+
+- [x] A git install builds the package: `prepare` replaces `prepack`, because
+      npm runs `prepare` and not `prepack` for a git dependency, and
+      `npm install github:DaniyalMlk/recalc` had been installing a package
+      with no `dist` in it
+- [x] The install lines in the README and on the front page give a command
+      that works today, read against phase 22's open release item so that
+      they fail in both directions and turn over when it is ticked
+- [x] The front page's first example run from the package root, which found
+      `lastRecalculated` quoted as 4 where the edit evaluates 5 — the edited
+      cell and its four dependents
