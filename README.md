@@ -102,10 +102,15 @@ a count of cases rather than a tolerance.
 
 ## Installing it
 
+**It is not on the registry yet**, so `npm install recalc-formula` does not
+work today. Install it from this repository instead, which builds it on the
+way in:
+
 ```bash
-npm install recalc-formula
+npm install github:DaniyalMlk/recalc
 ```
 
+Once it is published the line becomes `npm install recalc-formula`.
 **The package is `recalc-formula`, not `recalc`.** `recalc` on npm is an
 unrelated package, so the distribution name differs; the command line is still
 called `recalc`, and so is this repository. Node 20.19 or newer. The package

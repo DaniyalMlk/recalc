@@ -10,7 +10,7 @@
  * source maps shipped pointing at `src/` paths the tarball does not contain.
  *
  * So these tests read the manifest and ask `npm pack` what the tarball holds.
- * `npm pack --dry-run` fires `prepack`, so the answers describe a fresh build
+ * `npm pack --dry-run` fires `prepare`, so the answers describe a fresh build
  * rather than whatever was lying in `dist`.
  */
 
@@ -74,16 +74,21 @@ describe("the manifest", () => {
     expect(manifest.exports["."]!["types"]).toBe("./dist/index.d.ts");
   });
 
-  it("builds before it packs, not only before it publishes", () => {
-    // Without this, `npm pack` tars up whatever is in dist, which may predate
-    // the commit being packed.
-    expect(manifest.scripts["prepack"]).toBe("npm run build");
+  it("builds before it packs, before it publishes, and on a git install", () => {
+    // Without a build on pack, `npm pack` tars up whatever is in dist, which
+    // may predate the commit being packed. `prepare` runs there and on
+    // publish, and is also what npm runs for a git dependency: with only
+    // `prepack`, `npm install github:DaniyalMlk/recalc` installed a package
+    // with no dist in it at all. Both would build twice on every pack.
+    expect(manifest.scripts["prepare"]).toBe("npm run build");
+    expect(manifest.scripts["prepack"]).toBeUndefined();
+    expect(manifest.scripts["prepublishOnly"]).toBeUndefined();
     expect(manifest.scripts["build"]).toMatch(/&& tsc -p tsconfig\.build\.json$/);
   });
 
   it("ships no output whose source has gone", () => {
     // `tsc` writes what it emits and removes nothing, so a module renamed or
-    // deleted in src/ left its old .js and .d.ts in dist/, and `prepack`
+    // deleted in src/ left its old .js and .d.ts in dist/, and `prepare`
     // rebuilding first did not help: the rebuild added the new files beside
     // the old ones and `files: ["dist"]` sent both. Asserted on what the
     // tarball holds rather than on the wording of the build script, which is
