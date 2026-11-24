@@ -127,11 +127,11 @@ describe("the page links to the demo it publishes", () => {
     }
   });
 
-  it("says the install line does not work yet, while that is true", () => {
-    // The page is allowed to print an install line for a package nobody can
-    // install, but not silently: until the publisher is registered this
-    // sentence is the honest half, and removing it needs the tag to exist.
-    expect(prose).toMatch(/trusted publisher is registered/);
+  it("says the package is not on the registry yet, while that is true", () => {
+    // The install line itself now takes the package from the repository, and
+    // test/examples.test.ts reads it against the roadmap's release item. This
+    // sentence is what tells a reader why it is not the registry line.
+    expect(prose).toMatch(/not on the registry yet/);
   });
 });
 

@@ -27,6 +27,12 @@ import { registeredFunctionNames } from "../src/functions/index.js";
 /** The published name, which is not the repository's name. */
 export const PACKAGE = "recalc-formula";
 export const SOURCE = "https://github.com/DaniyalMlk/recalc";
+/**
+ * What to hand `npm install` while the package is not on the registry. npm
+ * builds a git dependency by running its `prepare` script, which is why the
+ * manifest builds there rather than in `prepack`.
+ */
+export const INSTALL_FROM_SOURCE = "github:DaniyalMlk/recalc";
 
 /** Where the demo is published relative to the landing page. */
 export const DEMO = "demo/";
@@ -190,7 +196,7 @@ function landing(checks: readonly Check[], functions: number): string {
 
 <section id="install" class="install col">
   <h2>The first minute</h2>
-  <pre><code>npm install ${esc(PACKAGE)}</code></pre>
+  <pre><code>npm install ${esc(INSTALL_FROM_SOURCE)}</code></pre>
   <pre><code>import { Workbook } from "${esc(PACKAGE)}";
 
 const book = new Workbook();
@@ -214,9 +220,10 @@ book.lastRecalculated;   // 4</code></pre>
   <code>recalc</code>, and so is this repository. Node 20.19 or newer. The
   package ships compiled JavaScript and type declarations and has no runtime
   dependencies. There is a REPL in the box too: <code>npx recalc</code>.</p>
-  <p class="aside">Until the trusted publisher is registered on the registry,
-  that install line is the one thing on this page that does not work yet, and
-  it installs from source in the meantime:
+  <p class="aside">It is not on the registry yet, so the install line above
+  takes it from the repository and builds it on the way in. Once it is
+  published that line becomes <code>npm install ${esc(PACKAGE)}</code>; to work
+  on the engine itself instead,
   <code>git clone ${esc(SOURCE)}.git &amp;&amp; npm ci</code>.</p>
 </section>
 
